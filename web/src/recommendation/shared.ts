@@ -4,6 +4,7 @@ import type {
   MealType,
   PriceRange,
 } from '../data/food_server';
+import type { RecommendationPreferenceSnapshot } from '../data/history_server';
 import type { RecommendationRequest } from '../data/recommand_server';
 
 export const cuisineOptions: Array<{ value: Cuisine; label: string }> = [
@@ -107,4 +108,45 @@ export function formatDistance(value: number): string {
 
 export function formatScore(value: number): string {
   return Number.isFinite(value) ? value.toFixed(4) : '-';
+}
+
+export function getLabels<TValue extends string>(
+  selectedValues: Array<TValue | null | undefined>,
+  options: Array<{ value: TValue; label: string }>,
+): string[] {
+  const optionMap = new Map(options.map((option) => [option.value, option.label]));
+  return selectedValues
+    .filter((value): value is TValue => Boolean(value))
+    .map((value) => optionMap.get(value) ?? value);
+}
+
+export function formatPreferenceLabel(label: string, value: string): string {
+  return `${label}: ${value}`;
+}
+
+export function getPreferenceSummaryChips(
+  preference: RecommendationPreferenceSnapshot | RecommendationRequest,
+): string[] {
+  return [
+    ...getLabels(preference.cuisine ?? [], cuisineOptions).map((value) =>
+      formatPreferenceLabel('Cuisine', value),
+    ),
+    ...getLabels(preference.meal_type ?? [], mealTypeOptions).map((value) =>
+      formatPreferenceLabel('Meal', value),
+    ),
+    ...getLabels(preference.price_range ?? [], priceRangeOptions).map((value) =>
+      formatPreferenceLabel('Price', value),
+    ),
+    ...getLabels(preference.convenience ?? [], convenienceOptions).map((value) =>
+      formatPreferenceLabel('Convenience', value),
+    ),
+  ];
+}
+
+export function formatTimestamp(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+  return date.toLocaleString();
 }

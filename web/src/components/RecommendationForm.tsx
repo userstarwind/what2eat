@@ -14,7 +14,7 @@ import AutoAwesomeRoundedIcon from '@mui/icons-material/AutoAwesomeRounded';
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded';
 import { useLocation, useNavigate } from 'react-router-dom';
 import useNotifications from '../hooks/useNotifications/useNotifications';
-import PageContainer from '../components/PageContainer';
+import PageContainer from './PageContainer';
 import {
   buildRecommendationPayload,
   convenienceOptions,
@@ -24,9 +24,9 @@ import {
   mealTypeOptions,
   priceRangeOptions,
   type RecommendationFormState,
-} from './recommendationShared';
+} from '../recommendation/shared';
 
-export default function RecommendationPage() {
+export default function RecommendationForm() {
   const navigate = useNavigate();
   const location = useLocation();
   const notifications = useNotifications();

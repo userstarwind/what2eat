@@ -7,10 +7,12 @@ import FoodList from './components/FoodList';
 import FoodCreate from './components/FoodCreate';
 import FoodShow from './components/FoodShow';
 import FoodEdit from './components/FoodEdit';
+import RecommendationForm from './components/RecommendationForm';
+import RecommendationResult from './components/RecommendationResult';
+import RecommendationHistoryList from './components/RecommendationHistoryList';
+import RecommendationHistoryShow from './components/RecommendationHistoryShow';
 import HelpPage from './pages/HelpPage';
 import AboutPage from './pages/AboutPage';
-import RecommendationPage from './pages/RecommendationPage';
-import RecommendationResultPage from './pages/RecommendationResultPage';
 
 function App() {
   return (
@@ -37,8 +39,12 @@ function App() {
           <Route path=":foodId" element={<FoodShow />} />
           <Route path=":foodId/edit" element={<FoodEdit />} />
         </Route>
-        <Route path="recommend" element={<RecommendationPage />} />
-        <Route path="recommend/results" element={<RecommendationResultPage />} />
+        <Route path="recommend" element={<RecommendationForm />} />
+        <Route path="recommend/results" element={<RecommendationResult />} />
+        <Route path="history">
+          <Route index element={<RecommendationHistoryList />} />
+          <Route path=":historyId" element={<RecommendationHistoryShow />} />
+        </Route>
         <Route path="about" element={<AboutPage />} />
         <Route path="help" element={<HelpPage />} />
       </Route>

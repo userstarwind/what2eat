@@ -27,29 +27,22 @@ import {
   type RecommendationResponse,
 } from '../data/recommand_server';
 import useNotifications from '../hooks/useNotifications/useNotifications';
-import PageContainer from '../components/PageContainer';
+import PageContainer from './PageContainer';
 import {
   convenienceOptions,
   cuisineOptions,
   formatDistance,
   formatScore,
+  getLabels,
   loadingSteps,
   mealTypeOptions,
   priceRangeOptions,
   type RecommendationFormState,
-} from './recommendationShared';
+} from '../recommendation/shared';
 
 interface RecommendationResultLocationState {
   form?: RecommendationFormState;
   payload?: RecommendationRequest;
-}
-
-function getLabels<TValue extends string>(
-  selectedValues: TValue[],
-  options: Array<{ value: TValue; label: string }>,
-): string[] {
-  const optionMap = new Map(options.map((option) => [option.value, option.label]));
-  return selectedValues.map((value) => optionMap.get(value) ?? value);
 }
 
 function appendExtraRequest(
@@ -97,7 +90,7 @@ function buildRecommendationFormState(
   };
 }
 
-export default function RecommendationResultPage() {
+export default function RecommendationResult() {
   const navigate = useNavigate();
   const location = useLocation();
   const notifications = useNotifications();

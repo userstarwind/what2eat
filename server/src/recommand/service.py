@@ -14,6 +14,7 @@ from src.food.emb.client import request_embeddings
 from src.food.enum import FoodStatusEnum
 from src.food.models import Food
 from src.food.schemas import FoodRead
+from src.history.service import create_recommendation_history
 
 from .exceptions import NotEnoughRecommendationCandidatesException
 from .schemas import PreferenceFood, RecommendationItem, RecommendationResponse
@@ -452,9 +453,11 @@ async def recommend_foods(
         candidate_pool_size,
         len(preference.exclude_food_ids),
     )
-    return RecommendationResponse(
+    response = RecommendationResponse(
         candidate_pool_size=candidate_pool_size,
         coarse_top_k=global_settings.recommendation_coarse_top_k,
         final_top_k=global_settings.recommendation_final_top_k,
         recommendations=recommendations,
     )
+    history = await create_recommendation_history(session, user, preference, response)
+    return response.model_copy(update={"history_id": history.id})

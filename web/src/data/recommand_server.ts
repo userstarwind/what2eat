@@ -27,6 +27,7 @@ export interface RecommendationItem {
 }
 
 export interface RecommendationResponse {
+  history_id: string | null;
   candidate_pool_size: number;
   coarse_top_k: number;
   final_top_k: number;

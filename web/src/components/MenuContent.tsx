@@ -8,6 +8,7 @@ import ViewListRoundedIcon from '@mui/icons-material/ViewListRounded';
 import StarRoundedIcon from '@mui/icons-material/StarRounded';
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded';
 import AutoAwesomeRoundedIcon from '@mui/icons-material/AutoAwesomeRounded';
+import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded';
 import InfoRoundedIcon from '@mui/icons-material/InfoRounded';
 import HelpRoundedIcon from '@mui/icons-material/HelpRounded';
 import { useNavigate, useLocation } from 'react-router-dom';
@@ -21,6 +22,7 @@ export default function MenuContent() {
     { text: 'Favorites', icon: <StarRoundedIcon />, path: '/home/favorites' },
     { text: 'Recycle bin', icon: <DeleteOutlineRoundedIcon />, path: '/home/recycle' },
     { text: 'Recommendations', icon: <AutoAwesomeRoundedIcon />, path: '/home/recommend' },
+    { text: 'History', icon: <HistoryRoundedIcon />, path: '/home/history' },
   ];
 
   const secondaryListItems = [

@@ -54,6 +54,7 @@ class RecommendationItem(BaseModel):
 
 
 class RecommendationResponse(BaseModel):
+    history_id: UUID | None = None
     candidate_pool_size: int
     coarse_top_k: int
     final_top_k: int

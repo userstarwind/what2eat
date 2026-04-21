@@ -13,6 +13,7 @@ from src.database import close_db, close_redis, init_db, init_redis
 from src.food.emb import run_food_embedding_worker_process
 from src.food.router import food_router
 from src.food.service import ensure_default_food_cache
+from src.history.router import recommendation_history_router
 from src.recommand.router import recommendation_router
 
 
@@ -74,6 +75,7 @@ app.add_middleware(
 )
 app.include_router(auth_router)
 app.include_router(food_router)
+app.include_router(recommendation_history_router)
 app.include_router(recommendation_router)
 
 

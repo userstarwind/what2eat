@@ -83,6 +83,8 @@ async def init_db() -> None:
     # Ensure SQLModel metadata includes all table models before create_all.
     from src.auth.models import User as _User  # noqa: F401
     from src.food.models import Food as _Food  # noqa: F401
+    from src.history.models import RecommendationHistory as _RecommendationHistory  # noqa: F401
+    from src.history.models import RecommendationHistoryItem as _RecommendationHistoryItem  # noqa: F401
 
 
     await ensure_database_exists()
