@@ -12,11 +12,13 @@ import ListItemIcon from '@mui/material/ListItemIcon';
 import ListItemText from '@mui/material/ListItemText';
 import Skeleton from '@mui/material/Skeleton';
 import Stack from '@mui/material/Stack';
+import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
 import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded';
 import AutoAwesomeRoundedIcon from '@mui/icons-material/AutoAwesomeRounded';
 import CheckCircleRoundedIcon from '@mui/icons-material/CheckCircleRounded';
 import MoreHorizRoundedIcon from '@mui/icons-material/MoreHorizRounded';
+import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded';
 import VisibilityRoundedIcon from '@mui/icons-material/VisibilityRounded';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
@@ -27,10 +29,10 @@ import {
 import useNotifications from '../hooks/useNotifications/useNotifications';
 import PageContainer from '../components/PageContainer';
 import {
-  formatDistance,
-  formatScore,
   convenienceOptions,
   cuisineOptions,
+  formatDistance,
+  formatScore,
   loadingSteps,
   mealTypeOptions,
   priceRangeOptions,
@@ -50,39 +52,100 @@ function getLabels<TValue extends string>(
   return selectedValues.map((value) => optionMap.get(value) ?? value);
 }
 
+function appendExtraRequest(
+  existingExtraRequest: string | null | undefined,
+  nextExtraRequest: string,
+): string | null {
+  const normalizedExisting = existingExtraRequest?.trim() ?? '';
+  const normalizedNext = nextExtraRequest.trim();
+
+  if (!normalizedExisting && !normalizedNext) {
+    return null;
+  }
+
+  if (!normalizedExisting) {
+    return normalizedNext;
+  }
+
+  if (!normalizedNext) {
+    return normalizedExisting;
+  }
+
+  if (normalizedExisting === normalizedNext) {
+    return normalizedExisting;
+  }
+
+  return `${normalizedExisting}\n${normalizedNext}`;
+}
+
+function buildRecommendationFormState(
+  form: RecommendationFormState | undefined,
+  payload: RecommendationRequest | null,
+): RecommendationFormState | undefined {
+  if (!payload && !form) {
+    return undefined;
+  }
+
+  return {
+    cuisine: [...(payload?.cuisine ?? form?.cuisine ?? [])],
+    meal_type: [...(payload?.meal_type ?? form?.meal_type ?? [])],
+    price_range: [...(payload?.price_range ?? form?.price_range ?? [])],
+    convenience: [...(payload?.convenience ?? form?.convenience ?? [])],
+    only_from_favorite:
+      payload?.only_from_favorite ?? form?.only_from_favorite ?? false,
+    extra_request: payload?.extra_request ?? form?.extra_request ?? '',
+  };
+}
+
 export default function RecommendationResultPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const notifications = useNotifications();
   const state = (location.state as RecommendationResultLocationState | null) ?? null;
-  const payload = state?.payload;
-  const form = state?.form;
+  const initialPayload = state?.payload ?? null;
+  const initialForm = state?.form;
 
+  const [requestPayload, setRequestPayload] = React.useState<RecommendationRequest | null>(
+    initialPayload,
+  );
+  const [displayPayload, setDisplayPayload] = React.useState<RecommendationRequest | null>(
+    initialPayload,
+  );
   const [result, setResult] = React.useState<RecommendationResponse | null>(null);
-  const [isLoading, setIsLoading] = React.useState(Boolean(payload));
+  const [isLoading, setIsLoading] = React.useState(Boolean(initialPayload));
   const [loadingStepIndex, setLoadingStepIndex] = React.useState(0);
+  const [extraRequestDraft, setExtraRequestDraft] = React.useState('');
 
   React.useEffect(() => {
-    if (!payload) {
-      notifications.show('Recommendation context is missing. Please go back and submit the form again.', {
-        severity: 'warning',
-        autoHideDuration: 4000,
-      });
+    if (!requestPayload) {
+      notifications.show(
+        'Recommendation context is missing. Please go back and submit the form again.',
+        {
+          severity: 'warning',
+          autoHideDuration: 4000,
+        },
+      );
       return;
     }
 
     let active = true;
+    const currentPayload = requestPayload;
+
     const runRecommendation = async () => {
       setIsLoading(true);
       setLoadingStepIndex(0);
+
       try {
-        const response = await recommendFoodsApi(payload);
+        const response = await recommendFoodsApi(currentPayload);
         if (!active) {
           return;
         }
+
         React.startTransition(() => {
           setResult(response);
+          setDisplayPayload(currentPayload);
         });
+        setExtraRequestDraft('');
         notifications.show(
           `Generated ${response.recommendations.length} recommendations from ${response.candidate_pool_size} candidate foods.`,
           {
@@ -94,6 +157,7 @@ export default function RecommendationResultPage() {
         if (!active) {
           return;
         }
+
         notifications.show((error as Error).message, {
           severity: 'error',
           autoHideDuration: 4000,
@@ -109,7 +173,7 @@ export default function RecommendationResultPage() {
     return () => {
       active = false;
     };
-  }, [notifications, payload]);
+  }, [notifications, requestPayload]);
 
   React.useEffect(() => {
     if (!isLoading) {
@@ -126,28 +190,34 @@ export default function RecommendationResultPage() {
     return () => window.clearInterval(timer);
   }, [isLoading]);
 
-  const handleBack = React.useCallback(() => {
-    navigate('/home/recommend', { state: form ? { form } : undefined });
-  }, [form, navigate]);
+  const summaryPayload = displayPayload ?? requestPayload;
+  const latestFormState = React.useMemo(
+    () => buildRecommendationFormState(initialForm, summaryPayload),
+    [initialForm, summaryPayload],
+  );
 
   const selectedCuisineLabels = getLabels(
-    form?.cuisine ?? payload?.cuisine ?? [],
+    summaryPayload?.cuisine ?? latestFormState?.cuisine ?? [],
     cuisineOptions,
   );
   const selectedMealTypeLabels = getLabels(
-    form?.meal_type ?? payload?.meal_type ?? [],
+    summaryPayload?.meal_type ?? latestFormState?.meal_type ?? [],
     mealTypeOptions,
   );
   const selectedPriceLabels = getLabels(
-    form?.price_range ?? payload?.price_range ?? [],
+    summaryPayload?.price_range ?? latestFormState?.price_range ?? [],
     priceRangeOptions,
   );
   const selectedConvenienceLabels = getLabels(
-    form?.convenience ?? payload?.convenience ?? [],
+    summaryPayload?.convenience ?? latestFormState?.convenience ?? [],
     convenienceOptions,
   );
-  const extraRequest = form?.extra_request ?? payload?.extra_request ?? '';
-  const onlyFromFavorite = form?.only_from_favorite ?? payload?.only_from_favorite ?? false;
+  const extraRequest =
+    summaryPayload?.extra_request ?? latestFormState?.extra_request ?? '';
+  const onlyFromFavorite =
+    summaryPayload?.only_from_favorite ??
+    latestFormState?.only_from_favorite ??
+    false;
 
   const renderPreferenceGroup = React.useCallback(
     (label: string, values: string[], prefix?: string) => (
@@ -170,16 +240,56 @@ export default function RecommendationResultPage() {
     [],
   );
 
+  const handleBack = React.useCallback(() => {
+    navigate('/home/recommend', {
+      state: latestFormState ? { form: latestFormState } : undefined,
+    });
+  }, [latestFormState, navigate]);
+
+  const handleRefreshBatch = React.useCallback(() => {
+    if (!displayPayload || !result) {
+      return;
+    }
+
+    const nextExcludedFoodIds = Array.from(
+      new Set([
+        ...(displayPayload.exclude_food_ids ?? []),
+        ...result.recommendations.map((item) => item.food.id),
+      ]),
+    );
+    const nextExtraRequest = appendExtraRequest(
+      displayPayload.extra_request,
+      extraRequestDraft,
+    );
+
+    if (nextExtraRequest && nextExtraRequest.length > 500) {
+      notifications.show(
+        'The combined extra request is too long. Please keep it within 500 characters.',
+        {
+          severity: 'warning',
+          autoHideDuration: 4000,
+        },
+      );
+      return;
+    }
+
+    setRequestPayload({
+      ...displayPayload,
+      extra_request: nextExtraRequest,
+      exclude_food_ids: nextExcludedFoodIds,
+    });
+  }, [displayPayload, extraRequestDraft, notifications, result]);
+
   return (
     <PageContainer
-      title="Generating Recommendations"
+      title="Recommendation Results"
       breadcrumbs={[
         { title: 'Recommendations', path: '/home/recommend' },
         { title: 'Results' },
       ]}
     >
       <Stack spacing={2} sx={{ width: '100%' }}>
-        {payload ? (
+        {summaryPayload ? (
           <Card variant="outlined">
             <CardContent>
               <Stack spacing={1.75}>
@@ -222,9 +332,9 @@ export default function RecommendationResultPage() {
                     }}
                   >
                     <Typography variant="caption" color="text.secondary">
-                      Extra request
+                      Current extra request
                     </Typography>
-                    <Typography variant="body2" sx={{ mt: 0.25 }}>
+                    <Typography variant="body2" sx={{ mt: 0.25, whiteSpace: 'pre-wrap' }}>
                       {extraRequest}
                     </Typography>
                   </Box>
@@ -234,7 +344,7 @@ export default function RecommendationResultPage() {
           </Card>
         ) : null}
 
-        {!payload ? (
+        {!requestPayload ? (
           <Card variant="outlined">
             <CardContent>
               <Stack spacing={1.5}>
@@ -417,13 +527,54 @@ export default function RecommendationResultPage() {
               </Stack>
             </Grid>
             <Grid size={{ xs: 12 }}>
-              <Stack direction="row" justifyContent="flex-start">
+              <Card variant="outlined">
+                <CardContent>
+                  <Stack spacing={1.5}>
+                    <Box>
+                      <Typography variant="subtitle2">Want another batch?</Typography>
+                      <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+                        We will keep your current preference settings, exclude the foods already
+                        shown in this batch, and optionally append another extra request before
+                        generating the next set.
+                      </Typography>
+                    </Box>
+                    <TextField
+                      fullWidth
+                      size="small"
+                      multiline
+                      minRows={2}
+                      maxRows={5}
+                      label="Add more for the next batch"
+                      value={extraRequestDraft}
+                      onChange={(event) => setExtraRequestDraft(event.target.value)}
+                      placeholder="For example: less spicy, more soup, something lighter, suitable for a late dinner..."
+                    />
+                    <Typography variant="body2" color="text.secondary">
+                      The next request will exclude {result.recommendations.length} foods from the
+                      current batch.
+                    </Typography>
+                  </Stack>
+                </CardContent>
+              </Card>
+            </Grid>
+            <Grid size={{ xs: 12 }}>
+              <Stack direction="row" justifyContent="space-between" spacing={2}>
                 <Button
                   variant="outlined"
+                  color="secondary"
                   startIcon={<ArrowBackRoundedIcon />}
                   onClick={handleBack}
                 >
                   Back
+                </Button>
+                <Button
+                  variant="outlined"
+                  color="secondary"
+                  startIcon={<RefreshRoundedIcon />}
+                  onClick={handleRefreshBatch}
+                  disabled={isLoading}
+                >
+                  Swap batch
                 </Button>
               </Stack>
             </Grid>

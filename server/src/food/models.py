@@ -10,7 +10,6 @@ from .enum import MealTypeEnum, CuisineEnum, PriceRangeEnum, ConvenienceEnum, Fo
 
 
 def utcnow() -> datetime:
-    # PostgreSQL columns are TIMESTAMP WITHOUT TIME ZONE, so persist UTC as naive datetimes.
     return datetime.now(timezone.utc).replace(tzinfo=None)
 
 

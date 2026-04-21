@@ -15,6 +15,7 @@ export interface RecommendationRequest {
   convenience?: Convenience[];
   only_from_favorite?: boolean;
   extra_request?: string | null;
+  exclude_food_ids?: string[];
 }
 
 export interface RecommendationItem {

@@ -1,3 +1,5 @@
+from uuid import UUID
+
 from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator
 
 from src.food.schemas import FoodRead
@@ -12,6 +14,7 @@ class PreferenceFood(BaseModel):
     convenience: list[ConvenienceEnum] = Field(default_factory=list)
     only_from_favorite: bool = False
     extra_request: str | None = Field(default=None, max_length=500)
+    exclude_food_ids: list[UUID] = Field(default_factory=list)
 
     @field_validator("cuisine", "meal_type", "price_range", "convenience")
     @classmethod
@@ -25,6 +28,11 @@ class PreferenceFood(BaseModel):
             field_name = info.field_name.replace("_", " ")
             raise ValueError(f"{field_name} must include at least one selection.")
         return value
+
+    @field_validator("exclude_food_ids")
+    @classmethod
+    def normalize_excluded_food_ids(cls, value: list[UUID]) -> list[UUID]:
+        return list(dict.fromkeys(value))
 
     @field_validator("extra_request")
     @classmethod

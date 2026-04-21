@@ -21,11 +21,12 @@ async def recommend_foods_endpoint(
     session: AsyncSession = Depends(get_session),
 ) -> RecommendationResponse:
     logger.info(
-        "Received recommendation request user_id=%s only_from_favorite=%s cuisine=%s meal_type=%s.",
+        "Received recommendation request user_id=%s only_from_favorite=%s cuisine=%s meal_type=%s excluded_count=%s.",
         current_user.id,
         payload.only_from_favorite,
         payload.cuisine,
         payload.meal_type,
+        len(payload.exclude_food_ids),
     )
     response = await recommend_foods(session, current_user, payload)
     logger.info(

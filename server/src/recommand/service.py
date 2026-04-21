@@ -91,6 +91,9 @@ def _candidate_filters(user_id, preference: PreferenceFood) -> list[object]:
     if preference.only_from_favorite:
         filters.append(Food.is_favorite.is_(True))
 
+    if preference.exclude_food_ids:
+        filters.append(Food.id.notin_(preference.exclude_food_ids))
+
     return filters
 
 
@@ -132,9 +135,10 @@ async def _fetch_coarse_candidates(
         for index, row in enumerate(rows)
     ]
     logger.info(
-        "Fetched %s coarse recommendation candidates for user_id=%s.",
+        "Fetched %s coarse recommendation candidates for user_id=%s excluded_count=%s.",
         len(coarse_candidates),
         user.id,
+        len(preference.exclude_food_ids),
     )
     return coarse_candidates
 
@@ -442,10 +446,11 @@ async def recommend_foods(
         for candidate in final_candidates
     ]
     logger.info(
-        "Built %s final recommendations for user_id=%s candidate_pool_size=%s.",
+        "Built %s final recommendations for user_id=%s candidate_pool_size=%s excluded_count=%s.",
         len(recommendations),
         user.id,
         candidate_pool_size,
+        len(preference.exclude_food_ids),
     )
     return RecommendationResponse(
         candidate_pool_size=candidate_pool_size,
