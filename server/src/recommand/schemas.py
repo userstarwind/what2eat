@@ -53,9 +53,18 @@ class RecommendationItem(BaseModel):
     reason: str
 
 
+class RecommendationDiagnostics(BaseModel):
+    recommendation_mode: str
+    recall_source: str
+    rerank_source: str
+    reason_source: str
+    fallback_reasons: list[str] = Field(default_factory=list)
+
+
 class RecommendationResponse(BaseModel):
     history_id: UUID | None = None
     candidate_pool_size: int
     coarse_top_k: int
     final_top_k: int
+    diagnostics: RecommendationDiagnostics
     recommendations: list[RecommendationItem]

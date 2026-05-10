@@ -42,10 +42,7 @@ function getStatusColor(
   if (food.status === 'inactive') {
     return 'default';
   }
-  if (food.status === 'failed') {
-    return 'error';
-  }
-  return 'warning';
+  return 'default';
 }
 
 function getStatusLabel(food: FoodReadResp): string {
@@ -58,13 +55,29 @@ function getStatusLabel(food: FoodReadResp): string {
   if (food.status === 'inactive') {
     return 'Inactive';
   }
-  if (food.status === 'processing') {
-    return 'Processing';
+  return 'Inactive';
+}
+
+function getEmbeddingStatusColor(
+  food: FoodReadResp,
+): 'default' | 'success' | 'info' | 'warning' | 'error' {
+  if (food.embedding_status === 'ready') {
+    return 'success';
   }
-  if (food.status === 'failed') {
-    return 'Failed';
+  if (food.embedding_status === 'processing') {
+    return 'info';
   }
-  return 'Waiting for processing';
+  if (food.embedding_status === 'failed') {
+    return 'error';
+  }
+  if (food.embedding_status === 'pending') {
+    return 'warning';
+  }
+  return 'default';
+}
+
+function getEmbeddingStatusLabel(food: FoodReadResp): string {
+  return food.embedding_status.replaceAll('_', ' ');
 }
 
 function getViewFromPathname(pathname: string): FoodListView {
@@ -141,12 +154,26 @@ export default function FoodList() {
       {
         field: 'status',
         headerName: 'Status',
-        minWidth: 170,
+        minWidth: 120,
         flex: 0.7,
         renderCell: (params: GridRenderCellParams<FoodReadResp>) => (
           <Chip
             label={getStatusLabel(params.row)}
             color={getStatusColor(params.row)}
+            size="small"
+            variant="outlined"
+          />
+        ),
+      },
+      {
+        field: 'embedding_status',
+        headerName: 'Embedding',
+        minWidth: 150,
+        flex: 0.7,
+        renderCell: (params: GridRenderCellParams<FoodReadResp>) => (
+          <Chip
+            label={getEmbeddingStatusLabel(params.row)}
+            color={getEmbeddingStatusColor(params.row)}
             size="small"
             variant="outlined"
           />

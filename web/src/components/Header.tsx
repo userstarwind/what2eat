@@ -33,7 +33,7 @@ export default function Header() {
             <Box
               component="img"
               src="/logo.svg"
-              alt="QuizForge logo"
+              alt="what2eat logo"
               sx={{ width: 28, height: 28, display: 'block' }}
             />
             <Typography
@@ -44,7 +44,7 @@ export default function Header() {
                 lineHeight: 1,
               }}
             >
-              QuizForge
+              What2Eat
             </Typography>
           </Stack>
           <TopRightControls />

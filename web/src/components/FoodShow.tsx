@@ -56,10 +56,7 @@ function getStatusColor(
   if (food.status === 'inactive') {
     return 'default';
   }
-  if (food.status === 'failed') {
-    return 'error';
-  }
-  return 'warning';
+  return 'default';
 }
 
 function getStatusLabel(food: FoodReadResp): string {
@@ -72,17 +69,33 @@ function getStatusLabel(food: FoodReadResp): string {
   if (food.status === 'inactive') {
     return 'Inactive';
   }
-  if (food.status === 'processing') {
-    return 'Processing';
+  return 'Inactive';
+}
+
+function getEmbeddingStatusColor(
+  food: FoodReadResp,
+): 'default' | 'success' | 'info' | 'warning' | 'error' {
+  if (food.embedding_status === 'ready') {
+    return 'success';
   }
-  if (food.status === 'failed') {
-    return 'Failed';
+  if (food.embedding_status === 'processing') {
+    return 'info';
   }
-  return 'Waiting for processing';
+  if (food.embedding_status === 'failed') {
+    return 'error';
+  }
+  if (food.embedding_status === 'pending') {
+    return 'warning';
+  }
+  return 'default';
+}
+
+function getEmbeddingStatusLabel(food: FoodReadResp): string {
+  return food.embedding_status.replaceAll('_', ' ');
 }
 
 function canToggleActive(food: FoodReadResp): boolean {
-  return !food.is_recycled && (food.status === 'active' || food.status === 'inactive');
+  return !food.is_recycled;
 }
 
 export default function FoodShow() {
@@ -337,6 +350,18 @@ export default function FoodShow() {
                 <Chip
                   label={getStatusLabel(food)}
                   color={getStatusColor(food)}
+                  variant="outlined"
+                />
+              </Box>
+            </Paper>
+          </Grid>
+          <Grid size={{ xs: 12, sm: 4 }}>
+            <Paper sx={{ px: 2, py: 1 }}>
+              <Typography variant="overline">Embedding</Typography>
+              <Box sx={{ mb: 1 }}>
+                <Chip
+                  label={getEmbeddingStatusLabel(food)}
+                  color={getEmbeddingStatusColor(food)}
                   variant="outlined"
                 />
               </Box>

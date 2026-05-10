@@ -1,11 +1,12 @@
 import { http } from './server_tools';
 import { getAuthorizationHeader } from './user_server';
 
-export type FoodStatus =
-  | 'wait_for_process'
+export type FoodStatus = 'active' | 'inactive';
+export type FoodEmbeddingStatus =
+  | 'unavailable'
+  | 'pending'
   | 'processing'
-  | 'active'
-  | 'inactive'
+  | 'ready'
   | 'failed';
 export type FoodListView = 'all' | 'favorites' | 'recycle';
 export type Cuisine =
@@ -49,6 +50,7 @@ export interface FoodReadResp {
   price_range: PriceRange;
   convenience: Convenience;
   status: FoodStatus;
+  embedding_status: FoodEmbeddingStatus;
   version: number;
   is_favorite: boolean;
   is_recycled: boolean;
@@ -60,6 +62,7 @@ export interface ListFoodsParams {
   view?: FoodListView;
   keyword?: string;
   status?: FoodStatus;
+  embedding_status?: FoodEmbeddingStatus;
   cuisine?: Cuisine;
   meal_type?: MealType;
   price_range?: PriceRange;
@@ -85,6 +88,9 @@ function buildFoodListQuery(params: ListFoodsParams = {}): string {
   }
   if (params.status) {
     searchParams.set('status', params.status);
+  }
+  if (params.embedding_status) {
+    searchParams.set('embedding_status', params.embedding_status);
   }
   if (params.cuisine) {
     searchParams.set('cuisine', params.cuisine);

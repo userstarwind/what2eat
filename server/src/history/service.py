@@ -28,6 +28,7 @@ async def create_recommendation_history(
     history = RecommendationHistory(
         user_id=user.id,
         preference_snapshot=preference.model_dump(mode="json", exclude_none=True),
+        diagnostics_snapshot=response.diagnostics.model_dump(mode="json"),
         candidate_pool_size=response.candidate_pool_size,
         coarse_top_k=response.coarse_top_k,
         final_top_k=response.final_top_k,
@@ -103,6 +104,7 @@ async def list_recommendation_histories(
         RecommendationHistorySummary(
             id=history.id,
             preference_snapshot=history.preference_snapshot,
+            diagnostics_snapshot=history.diagnostics_snapshot,
             candidate_pool_size=history.candidate_pool_size,
             coarse_top_k=history.coarse_top_k,
             final_top_k=history.final_top_k,
@@ -176,6 +178,7 @@ async def get_recommendation_history(
     return RecommendationHistoryRead(
         id=history.id,
         preference_snapshot=history.preference_snapshot,
+        diagnostics_snapshot=history.diagnostics_snapshot,
         candidate_pool_size=history.candidate_pool_size,
         coarse_top_k=history.coarse_top_k,
         final_top_k=history.final_top_k,

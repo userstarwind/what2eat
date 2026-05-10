@@ -6,7 +6,14 @@ from sqlalchemy import Column, UniqueConstraint
 from sqlmodel import Field, SQLModel
 
 from .config import food_settings
-from .enum import MealTypeEnum, CuisineEnum, PriceRangeEnum, ConvenienceEnum, FoodStatusEnum
+from .enum import (
+    ConvenienceEnum,
+    CuisineEnum,
+    FoodEmbeddingStatusEnum,
+    FoodStatusEnum,
+    MealTypeEnum,
+    PriceRangeEnum,
+)
 
 
 def utcnow() -> datetime:
@@ -26,7 +33,12 @@ class Food(SQLModel, table=True):
     price_range: PriceRangeEnum = Field(default=PriceRangeEnum.MEDIUM, nullable=False)
     convenience: ConvenienceEnum = Field(default=ConvenienceEnum.MEDIUM, nullable=False)
 
-    status: FoodStatusEnum = Field(default=FoodStatusEnum.WAIT_FOR_PROCESS, nullable=False)
+    status: FoodStatusEnum = Field(default=FoodStatusEnum.ACTIVE, nullable=False)
+    embedding_status: FoodEmbeddingStatusEnum = Field(
+        default=FoodEmbeddingStatusEnum.UNAVAILABLE,
+        nullable=False,
+        index=True,
+    )
     version: int = Field(default=1, nullable=False)
     is_favorite: bool = Field(default=False, nullable=False)
     is_recycled: bool = Field(default=False, nullable=False)

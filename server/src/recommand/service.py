@@ -11,13 +11,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.auth.models import User
 from src.config import global_settings
 from src.food.emb.client import request_embeddings
-from src.food.enum import FoodStatusEnum
+from src.food.enum import FoodEmbeddingStatusEnum, FoodStatusEnum
 from src.food.models import Food
 from src.food.schemas import FoodRead
 from src.history.service import create_recommendation_history
 
 from .exceptions import NotEnoughRecommendationCandidatesException
-from .schemas import PreferenceFood, RecommendationItem, RecommendationResponse
+from .schemas import (
+    PreferenceFood,
+    RecommendationDiagnostics,
+    RecommendationItem,
+    RecommendationResponse,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -81,13 +86,24 @@ def _build_rerank_document(food: Food) -> str:
     )
 
 
-def _candidate_filters(user_id, preference: PreferenceFood) -> list[object]:
+def _candidate_filters(
+    user_id,
+    preference: PreferenceFood,
+    *,
+    require_embedding: bool = False,
+) -> list[object]:
     filters: list[object] = [
         Food.user_id == user_id,
         Food.status == FoodStatusEnum.ACTIVE,
         Food.is_recycled.is_(False),
-        Food.embedding.is_not(None),
     ]
+    if require_embedding:
+        filters.extend(
+            [
+                Food.embedding.is_not(None),
+                Food.embedding_status == FoodEmbeddingStatusEnum.READY,
+            ]
+        )
 
     if preference.only_from_favorite:
         filters.append(Food.is_favorite.is_(True))
@@ -121,7 +137,7 @@ async def _fetch_coarse_candidates(
     distance_expr = Food.embedding.cosine_distance(query_embedding)
     statement = (
         select(Food, distance_expr.label("distance"))
-        .where(*_candidate_filters(user.id, preference))
+        .where(*_candidate_filters(user.id, preference, require_embedding=True))
         .order_by(distance_expr.asc(), Food.updated_at.desc())
         .limit(global_settings.recommendation_coarse_top_k)
     )
@@ -142,6 +158,114 @@ async def _fetch_coarse_candidates(
         len(preference.exclude_food_ids),
     )
     return coarse_candidates
+
+
+def _tokenize_extra_request(extra_request: str | None) -> set[str]:
+    if not extra_request:
+        return set()
+    return {
+        token
+        for token in re.findall(r"[A-Za-z0-9]+", extra_request.lower())
+        if len(token) >= 3
+    }
+
+
+def _rule_match_score(preference: PreferenceFood, food: Food) -> float:
+    score = 0.0
+    if preference.cuisine and food.cuisine in preference.cuisine:
+        score += 3.0
+    if preference.meal_type and food.meal_type in preference.meal_type:
+        score += 3.0
+    if preference.price_range and food.price_range in preference.price_range:
+        score += 2.0
+    if preference.convenience and food.convenience in preference.convenience:
+        score += 2.0
+    if food.is_favorite:
+        score += 0.75
+
+    request_tokens = _tokenize_extra_request(preference.extra_request)
+    if request_tokens:
+        searchable_text = f"{food.name} {food.description or ''}".lower()
+        matched_tokens = sum(1 for token in request_tokens if token in searchable_text)
+        score += min(float(matched_tokens) * 0.35, 1.5)
+
+    return score
+
+
+def _max_rule_score(preference: PreferenceFood) -> float:
+    score = 0.75
+    if preference.cuisine:
+        score += 3.0
+    if preference.meal_type:
+        score += 3.0
+    if preference.price_range:
+        score += 2.0
+    if preference.convenience:
+        score += 2.0
+    if preference.extra_request:
+        score += 1.5
+    return score
+
+
+async def _fetch_rule_candidates(
+    session: AsyncSession,
+    user: User,
+    preference: PreferenceFood,
+    *,
+    excluded_candidate_ids: set[str] | None = None,
+    limit: int | None = None,
+    start_rank: int = 1,
+) -> list[dict[str, object]]:
+    excluded_candidate_ids = excluded_candidate_ids or set()
+    limit = limit or global_settings.recommendation_coarse_top_k
+    statement = (
+        select(Food)
+        .where(*_candidate_filters(user.id, preference))
+        .order_by(Food.updated_at.desc())
+    )
+    result = await session.execute(statement)
+    foods = list(result.scalars().all())
+    max_score = _max_rule_score(preference)
+
+    scored_foods = [
+        {
+            "food": food,
+            "rule_score": _rule_match_score(preference, food),
+        }
+        for food in foods
+        if str(food.id) not in excluded_candidate_ids
+    ]
+    scored_foods.sort(
+        key=lambda item: (
+            -float(item["rule_score"]),
+            not bool(item["food"].is_favorite),  # type: ignore[index]
+            -item["food"].updated_at.timestamp(),  # type: ignore[index]
+        ),
+    )
+
+    candidates: list[dict[str, object]] = []
+    for index, item in enumerate(
+        scored_foods[:limit],
+        start=start_rank,
+    ):
+        normalized_score = min(max(float(item["rule_score"]) / max_score, 0.0), 1.0)
+        candidates.append(
+            {
+                "food": item["food"],
+                "coarse_distance": 1.0 - normalized_score,
+                "coarse_rank": index,
+                "rule_score": normalized_score,
+            }
+        )
+
+    logger.info(
+        "Fetched %s rule recommendation candidates for user_id=%s excluded_count=%s.",
+        len(candidates),
+        user.id,
+        len(preference.exclude_food_ids),
+    )
+    return candidates
+
 
 async def _request_rerank_scores(
     query_text: str,
@@ -204,28 +328,86 @@ async def _request_rerank_scores(
     return await asyncio.to_thread(_run_sync)
 
 
-def _fallback_reason(preference: PreferenceFood, food: Food) -> str:
-    matched_bits: list[str] = []
-    if preference.cuisine and food.cuisine in preference.cuisine:
-        matched_bits.append(f"{food.cuisine.value} cuisine")
-    if preference.meal_type and food.meal_type in preference.meal_type:
-        matched_bits.append(f"{food.meal_type.value} timing")
-    if preference.price_range and food.price_range in preference.price_range:
-        matched_bits.append(f"{food.price_range.value} price range")
-    if preference.convenience and food.convenience in preference.convenience:
-        matched_bits.append(f"{food.convenience.value} convenience")
-    if food.is_favorite:
-        matched_bits.append("favorite history")
+def _humanize_enum(value: str) -> str:
+    return value.replace("_", " ")
 
-    reason = f"{food.name} stands out because it fits your current preference profile"
-    if matched_bits:
-        reason += " through " + ", ".join(matched_bits)
-    if food.description:
-        reason += f", and its {food.description.lower()}"
-    if preference.extra_request:
-        reason += f" also lines up with your extra request for {preference.extra_request}"
-    reason += "."
-    return reason
+
+def _describe_price(value: str) -> str:
+    return {
+        "low": "budget-friendly",
+        "medium": "moderately priced",
+        "high": "a bit more special",
+    }.get(value, _humanize_enum(value))
+
+
+def _describe_convenience(value: str) -> str:
+    return {
+        "low": "worth taking a little more time for",
+        "medium": "easy enough for a normal day",
+        "high": "quick and low-effort",
+    }.get(value, _humanize_enum(value))
+
+
+def _clean_description(description: str | None) -> str | None:
+    if not description:
+        return None
+    normalized = re.sub(r"\s+", " ", description.strip()).rstrip(".")
+    return normalized or None
+
+
+def _fallback_reason(preference: PreferenceFood, food: Food) -> str:
+    matched_phrases: list[str] = []
+    if preference.cuisine and food.cuisine in preference.cuisine:
+        matched_phrases.append(f"a {_humanize_enum(food.cuisine.value)} craving")
+    if preference.meal_type and food.meal_type in preference.meal_type:
+        matched_phrases.append(f"{food.meal_type.value} plans")
+    if preference.price_range and food.price_range in preference.price_range:
+        matched_phrases.append(_describe_price(food.price_range.value))
+    if preference.convenience and food.convenience in preference.convenience:
+        matched_phrases.append(_describe_convenience(food.convenience.value))
+    if food.is_favorite:
+        matched_phrases.append("something you have already marked as a favorite")
+
+    description = _clean_description(food.description)
+    lead_index = food.id.int % 3
+    match_text = " and ".join(matched_phrases[:2])
+    if len(matched_phrases) > 2:
+        match_text += f", with {matched_phrases[2]} in the mix"
+
+    if match_text and description:
+        options = [
+            (
+                f"{food.name} is a strong fit for {match_text}, and the detail that "
+                f"stands out is {description.lower()}."
+            ),
+            (
+                f"{food.name} should work well here: it covers {match_text} while "
+                f"bringing {description.lower()}."
+            ),
+            (
+                f"{food.name} feels like a good pick because it matches {match_text}. "
+                f"The {description.lower()} makes it feel more specific than a generic choice."
+            ),
+        ]
+        return options[lead_index]
+
+    if match_text:
+        options = [
+            f"{food.name} fits this request nicely because it lines up with {match_text}.",
+            f"{food.name} is a sensible choice here, especially for {match_text}.",
+            f"{food.name} should suit the moment well because it matches {match_text}.",
+        ]
+        return options[lead_index]
+
+    if description:
+        options = [
+            f"{food.name} is worth considering for this round, especially for its {description.lower()}.",
+            f"{food.name} brings {description.lower()}, which gives it a clear reason to be on the list.",
+            f"{food.name} stands out here because of its {description.lower()}.",
+        ]
+        return options[lead_index]
+
+    return f"{food.name} is a solid option from your active foods for this set of preferences."
 
 
 def _is_reason_usable(reason: str | None) -> bool:
@@ -378,6 +560,7 @@ async def recommend_foods(
     user: User,
     preference: PreferenceFood,
 ) -> RecommendationResponse:
+    fallback_reasons: list[str] = []
     candidate_pool_size = await _count_candidates(session, user, preference)
     if candidate_pool_size < global_settings.recommendation_candidate_pool_minimum:
         raise NotEnoughRecommendationCandidatesException(
@@ -385,29 +568,105 @@ async def recommend_foods(
             actual=candidate_pool_size,
         )
 
-    query_text = _build_preference_text(preference)
-    query_embedding = (await request_embeddings([query_text]))[0]
-    coarse_candidates = await _fetch_coarse_candidates(session, user, preference, query_embedding)
+    recall_source = "embedding"
+    coarse_candidates: list[dict[str, object]] = []
+    embedding_recall_failed = False
+    if global_settings.vllm_embedding_endpoint and global_settings.vllm_embedding_model:
+        try:
+            query_text = _build_preference_text(preference)
+            query_embedding = (await request_embeddings([query_text]))[0]
+            coarse_candidates = await _fetch_coarse_candidates(
+                session,
+                user,
+                preference,
+                query_embedding,
+            )
+        except Exception as exc:
+            embedding_recall_failed = True
+            fallback_reasons.append("Embedding recall failed; used rule-based recall.")
+            logger.warning(
+                "Falling back to rule-based recommendation recall because embedding failed: %s",
+                exc,
+            )
+    else:
+        fallback_reasons.append("Embedding model is not configured; used rule-based recall.")
+        logger.info("Using rule-based recommendation recall because embedding is not configured.")
+
+    if (
+        coarse_candidates
+        and len(coarse_candidates) < global_settings.recommendation_coarse_top_k
+    ):
+        fill_count = global_settings.recommendation_coarse_top_k - len(coarse_candidates)
+        rule_candidates = await _fetch_rule_candidates(
+            session,
+            user,
+            preference,
+            excluded_candidate_ids={
+                str(candidate["food"].id)  # type: ignore[index]
+                for candidate in coarse_candidates
+            },
+            limit=fill_count,
+            start_rank=len(coarse_candidates) + 1,
+        )
+        if rule_candidates:
+            recall_source = "mixed"
+            coarse_candidates.extend(rule_candidates)
+            fallback_reasons.append(
+                "Embedding recall covered part of the pool; rule recall filled the remaining candidates."
+            )
+
+    if not coarse_candidates:
+        if (
+            global_settings.vllm_embedding_endpoint
+            and global_settings.vllm_embedding_model
+            and not embedding_recall_failed
+        ):
+            fallback_reasons.append(
+                "Embedding recall returned no ready candidates; used rule-based recall."
+            )
+            logger.warning("Embedding recall returned no ready candidates; using rule-based recall.")
+        recall_source = "rule"
+        coarse_candidates = await _fetch_rule_candidates(session, user, preference)
+
     rerank_query_text = _build_rerank_query_text(preference)
 
     external_rerank_scores: dict[str, float] = {}
+    rerank_source = "coarse_score"
     if global_settings.vllm_rerank_endpoint and global_settings.vllm_rerank_model:
         try:
             external_rerank_scores = await _request_rerank_scores(
                 rerank_query_text,
                 coarse_candidates,
             )
+            if external_rerank_scores:
+                rerank_source = (
+                    "external"
+                    if len(external_rerank_scores) == len(coarse_candidates)
+                    else "mixed"
+                )
+                if rerank_source == "mixed":
+                    fallback_reasons.append(
+                        "External rerank returned partial scores; missing scores used recall scores."
+                    )
+            else:
+                fallback_reasons.append(
+                    "External rerank returned no usable scores; used recall scores."
+                )
         except Exception as exc:
+            fallback_reasons.append("External rerank failed; used recall scores.")
             logger.warning(
                 "Falling back to coarse ranking because external rerank failed: %s",
                 exc,
             )
+    else:
+        fallback_reasons.append("Rerank model is not configured; used recall scores.")
 
     scored_candidates: list[dict[str, object]] = []
     for candidate in coarse_candidates:
         food = candidate["food"]  # type: ignore[index]
         coarse_distance = float(candidate["coarse_distance"])  # type: ignore[arg-type]
-        rerank_score = external_rerank_scores.get(str(food.id), 1.0 - coarse_distance)
+        recall_score = float(candidate.get("rule_score", 1.0 - coarse_distance))
+        rerank_score = external_rerank_scores.get(str(food.id), recall_score)
         scored_candidates.append(
             {
                 **candidate,
@@ -421,42 +680,81 @@ async def recommend_foods(
     final_candidates = scored_candidates[: global_settings.recommendation_final_top_k]
 
     llm_reasons: dict[str, str] = {}
+    reason_source = "template"
     if global_settings.vllm_chat_endpoint and global_settings.vllm_chat_model:
         try:
             llm_reasons = await _generate_llm_reasons(preference, final_candidates)
         except Exception as exc:
+            fallback_reasons.append("LLM reason generation failed; used template reasons.")
             logger.warning(
                 "Falling back to template recommendation reasons because LLM generation failed: %s",
                 exc,
             )
+    else:
+        fallback_reasons.append("LLM reason model is not configured; used template reasons.")
 
-    recommendations = [
-        RecommendationItem(
-            food=FoodRead.model_validate(candidate["food"]),
-            coarse_rank=int(candidate["coarse_rank"]),
-            coarse_distance=float(candidate["coarse_distance"]),
-            rerank_score=float(candidate["rerank_score"]),
-            reason=(
-                llm_reasons[str(candidate["food"].id)]
-                if _is_reason_usable(
-                    llm_reasons.get(str(candidate["food"].id))  # type: ignore[index]
-                )
-                else _fallback_reason(preference, candidate["food"])  # type: ignore[arg-type]
-            ),
+    recommendations: list[RecommendationItem] = []
+    llm_reason_count = 0
+    for candidate in final_candidates:
+        food = candidate["food"]  # type: ignore[index]
+        llm_reason = llm_reasons.get(str(food.id))
+        if _is_reason_usable(llm_reason):
+            reason = llm_reason or ""
+            llm_reason_count += 1
+        else:
+            reason = _fallback_reason(preference, food)  # type: ignore[arg-type]
+        recommendations.append(
+            RecommendationItem(
+                food=FoodRead.model_validate(food),
+                coarse_rank=int(candidate["coarse_rank"]),
+                coarse_distance=float(candidate["coarse_distance"]),
+                rerank_score=float(candidate["rerank_score"]),
+                reason=reason,
+            )
         )
-        for candidate in final_candidates
-    ]
+
+    if llm_reason_count == len(final_candidates) and final_candidates:
+        reason_source = "llm"
+    elif llm_reason_count:
+        reason_source = "mixed"
+        fallback_reasons.append(
+            "Some LLM reasons were missing or unusable; template reasons filled the gaps."
+        )
+    elif global_settings.vllm_chat_endpoint and global_settings.vllm_chat_model:
+        fallback_reasons.append(
+            "LLM returned no usable reasons; used template reasons."
+        )
+
+    recommendation_mode = "model"
+    if recall_source == "rule":
+        recommendation_mode = "rule"
+    elif fallback_reasons:
+        recommendation_mode = "hybrid"
+
+    diagnostics = RecommendationDiagnostics(
+        recommendation_mode=recommendation_mode,
+        recall_source=recall_source,
+        rerank_source=rerank_source,
+        reason_source=reason_source,
+        fallback_reasons=list(dict.fromkeys(fallback_reasons)),
+    )
     logger.info(
-        "Built %s final recommendations for user_id=%s candidate_pool_size=%s excluded_count=%s.",
+        "Built %s final recommendations for user_id=%s candidate_pool_size=%s "
+        "excluded_count=%s mode=%s recall_source=%s rerank_source=%s reason_source=%s.",
         len(recommendations),
         user.id,
         candidate_pool_size,
         len(preference.exclude_food_ids),
+        diagnostics.recommendation_mode,
+        diagnostics.recall_source,
+        diagnostics.rerank_source,
+        diagnostics.reason_source,
     )
     response = RecommendationResponse(
         candidate_pool_size=candidate_pool_size,
         coarse_top_k=global_settings.recommendation_coarse_top_k,
         final_top_k=global_settings.recommendation_final_top_k,
+        diagnostics=diagnostics,
         recommendations=recommendations,
     )
     history = await create_recommendation_history(session, user, preference, response)

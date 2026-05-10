@@ -12,6 +12,7 @@ from src.database import get_redis, get_session
 from .enum import (
     ConvenienceEnum,
     CuisineEnum,
+    FoodEmbeddingStatusEnum,
     FoodStatusEnum,
     MealTypeEnum,
     PriceRangeEnum,
@@ -44,17 +45,22 @@ async def get_foods(
     price_range: PriceRangeEnum | None = Query(default=None),
     convenience: ConvenienceEnum | None = Query(default=None),
     status_filter: FoodStatusEnum | None = Query(default=None, alias="status"),
+    embedding_status_filter: FoodEmbeddingStatusEnum | None = Query(
+        default=None,
+        alias="embedding_status",
+    ),
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> list[FoodRead]:
     logger.info(
-        "Listing foods for user_id=%s favorites_only=%s recycled_only=%s include_recycled=%s keyword=%s status=%s.",
+        "Listing foods for user_id=%s favorites_only=%s recycled_only=%s include_recycled=%s keyword=%s status=%s embedding_status=%s.",
         current_user.id,
         favorites_only,
         recycled_only,
         include_recycled,
         keyword,
         status_filter,
+        embedding_status_filter,
     )
     foods = await list_foods(
         session,
@@ -68,6 +74,7 @@ async def get_foods(
         price_range=price_range,
         convenience=convenience,
         status=status_filter,
+        embedding_status=embedding_status_filter,
     )
     logger.info("Listed %s foods for user_id=%s.", len(foods), current_user.id)
     return [FoodRead.model_validate(food) for food in foods]

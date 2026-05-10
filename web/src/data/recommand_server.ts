@@ -26,11 +26,20 @@ export interface RecommendationItem {
   reason: string;
 }
 
+export interface RecommendationDiagnostics {
+  recommendation_mode: string;
+  recall_source: string;
+  rerank_source: string;
+  reason_source: string;
+  fallback_reasons: string[];
+}
+
 export interface RecommendationResponse {
   history_id: string | null;
   candidate_pool_size: number;
   coarse_top_k: number;
   final_top_k: number;
+  diagnostics: RecommendationDiagnostics;
   recommendations: RecommendationItem[];
 }
 

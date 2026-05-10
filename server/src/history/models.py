@@ -17,6 +17,10 @@ class RecommendationHistory(SQLModel, table=True):
     preference_snapshot: dict[str, object] = Field(
         sa_column=Column(JSON, nullable=False),
     )
+    diagnostics_snapshot: dict[str, object] | None = Field(
+        default=None,
+        sa_column=Column(JSON, nullable=True),
+    )
     candidate_pool_size: int = Field(nullable=False)
     coarse_top_k: int = Field(nullable=False)
     final_top_k: int = Field(nullable=False)

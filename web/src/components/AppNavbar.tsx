@@ -65,7 +65,7 @@ export default function AppNavbar() {
             <Box
               component="img"
               src="/logo.svg"
-              alt="QuizForge logo"
+              alt="what2eat logo"
               sx={{ width: 28, height: 28, display: 'block' }}
             />
             <Typography
@@ -73,7 +73,7 @@ export default function AppNavbar() {
               component="h1"
               sx={{ color: 'text.primary', fontWeight: 700, letterSpacing: 0.2 }}
             >
-              QuizForge
+              What2Eat
             </Typography>
           </Stack>
           <ColorModeIconDropdown />

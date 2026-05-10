@@ -9,10 +9,10 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from src.auth.router import auth_router
 from src.config import global_settings
-from src.database import close_db, close_redis, init_db, init_redis
+from src.database import SessionLocal, close_db, close_redis, init_db, init_redis, redis_client
 from src.food.emb import run_food_embedding_worker_process
 from src.food.router import food_router
-from src.food.service import ensure_default_food_cache
+from src.food.service import ensure_default_food_cache, reconcile_embedding_jobs
 from src.history.router import recommendation_history_router
 from src.recommand.router import recommendation_router
 
@@ -48,6 +48,8 @@ async def lifespan(_: FastAPI):
     await ensure_default_food_cache()
     await init_redis()
     await init_db()
+    async with SessionLocal() as session:
+        await reconcile_embedding_jobs(session, redis_client)
     worker_processes = start_food_embedding_processes()
     try:
         yield

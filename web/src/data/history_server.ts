@@ -29,9 +29,18 @@ export interface RecommendationHistoryItem {
   food_snapshot: FoodReadResp;
 }
 
+export interface RecommendationDiagnosticsSnapshot {
+  recommendation_mode: string;
+  recall_source: string;
+  rerank_source: string;
+  reason_source: string;
+  fallback_reasons: string[];
+}
+
 export interface RecommendationHistorySummary {
   id: string;
   preference_snapshot: RecommendationPreferenceSnapshot;
+  diagnostics_snapshot: RecommendationDiagnosticsSnapshot | null;
   candidate_pool_size: number;
   coarse_top_k: number;
   final_top_k: number;
@@ -42,6 +51,7 @@ export interface RecommendationHistorySummary {
 export interface RecommendationHistoryRead {
   id: string;
   preference_snapshot: RecommendationPreferenceSnapshot;
+  diagnostics_snapshot: RecommendationDiagnosticsSnapshot | null;
   candidate_pool_size: number;
   coarse_top_k: number;
   final_top_k: number;

@@ -6,6 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from src.food.enum import (
     ConvenienceEnum,
     CuisineEnum,
+    FoodEmbeddingStatusEnum,
     FoodStatusEnum,
     MealTypeEnum,
     PriceRangeEnum,
@@ -31,12 +32,21 @@ class RecommendationFoodSnapshot(BaseModel):
     price_range: PriceRangeEnum
     convenience: ConvenienceEnum
     status: FoodStatusEnum
+    embedding_status: FoodEmbeddingStatusEnum = FoodEmbeddingStatusEnum.UNAVAILABLE
     version: int
     is_favorite: bool
     is_recycled: bool
     user_id: UUID
     created_at: datetime
     updated_at: datetime
+
+
+class RecommendationDiagnosticsSnapshot(BaseModel):
+    recommendation_mode: str = "model"
+    recall_source: str = "embedding"
+    rerank_source: str = "external"
+    reason_source: str = "llm"
+    fallback_reasons: list[str] = Field(default_factory=list)
 
 
 class RecommendationHistoryItemRead(BaseModel):
@@ -57,6 +67,7 @@ class RecommendationHistorySummary(BaseModel):
 
     id: UUID
     preference_snapshot: RecommendationPreferenceSnapshot
+    diagnostics_snapshot: RecommendationDiagnosticsSnapshot | None = None
     candidate_pool_size: int
     coarse_top_k: int
     final_top_k: int
@@ -69,6 +80,7 @@ class RecommendationHistoryRead(BaseModel):
 
     id: UUID
     preference_snapshot: RecommendationPreferenceSnapshot
+    diagnostics_snapshot: RecommendationDiagnosticsSnapshot | None = None
     candidate_pool_size: int
     coarse_top_k: int
     final_top_k: int

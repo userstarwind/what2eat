@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
 from src.auth.models import User
+from src.config import global_settings
 
 from .config import food_settings
 from .emb.client import request_embeddings
@@ -18,6 +19,7 @@ from .emb.queue import enqueue_food_embedding_jobs_batch
 from .enum import (
     ConvenienceEnum,
     CuisineEnum,
+    FoodEmbeddingStatusEnum,
     FoodStatusEnum,
     MealTypeEnum,
     PriceRangeEnum,
@@ -48,9 +50,33 @@ def _resolve_food_status(
 ) -> FoodStatusEnum:
     if status is not None:
         return status
-    if embedding:
-        return FoodStatusEnum.ACTIVE
-    return FoodStatusEnum.WAIT_FOR_PROCESS
+    return FoodStatusEnum.ACTIVE
+
+
+def embedding_is_configured() -> bool:
+    return bool(
+        global_settings.vllm_embedding_endpoint
+        and global_settings.vllm_embedding_model
+    )
+
+
+def _initial_embedding_status(embedding: list[float] | None) -> FoodEmbeddingStatusEnum:
+    if embedding is not None:
+        return FoodEmbeddingStatusEnum.READY
+    if embedding_is_configured():
+        return FoodEmbeddingStatusEnum.PENDING
+    return FoodEmbeddingStatusEnum.UNAVAILABLE
+
+
+def _resolve_embedding_status(
+    embedding: list[float] | None,
+    embedding_status: FoodEmbeddingStatusEnum | None,
+) -> FoodEmbeddingStatusEnum:
+    if embedding is not None:
+        return FoodEmbeddingStatusEnum.READY
+    if embedding_status is not None:
+        return embedding_status
+    return _initial_embedding_status(embedding)
 
 
 def _build_default_food_embedding_source(item: DefaultFoodItem) -> str:
@@ -108,7 +134,7 @@ async def ensure_default_food_cache() -> None:
     ]
     should_persist = bool(items_to_generate)
 
-    if items_to_generate:
+    if items_to_generate and embedding_is_configured():
         if food_settings.use_cache:
             logger.info(
                 "Detected %s default foods without cached embeddings. Generating now.",
@@ -136,6 +162,10 @@ async def ensure_default_food_cache() -> None:
                         update={
                             "embedding": embedding,
                             "status": _resolve_food_status(embedding, item.status),
+                            "embedding_status": _resolve_embedding_status(
+                                embedding,
+                                item.embedding_status,
+                            ),
                         }
                     )
                 )
@@ -146,17 +176,43 @@ async def ensure_default_food_cache() -> None:
                     update={
                         "embedding": embedding,
                         "status": _resolve_food_status(embedding, item.status),
+                        "embedding_status": _resolve_embedding_status(
+                            embedding,
+                            item.embedding_status,
+                        ),
                     }
                 )
                 for item, embedding in zip(default_items, embeddings, strict=True)
             ]
+    elif items_to_generate:
+        logger.info(
+            "Detected %s default foods without cached embeddings, but embedding is not configured.",
+            len(items_to_generate),
+        )
 
     normalized_items: list[DefaultFoodItem] = []
     for item in default_items:
         normalized_status = _resolve_food_status(item.embedding, item.status)
-        if normalized_status != item.status:
+        normalized_embedding_status = _resolve_embedding_status(
+            item.embedding,
+            item.embedding_status,
+        )
+        status_changed = normalized_status != item.status
+        embedding_status_changed = (
+            item.embedding_status is not None
+            and normalized_embedding_status != item.embedding_status
+        )
+        if (
+            status_changed
+            or embedding_status_changed
+        ):
             should_persist = True
-            item = item.model_copy(update={"status": normalized_status})
+            item = item.model_copy(
+                update={
+                    "status": normalized_status,
+                    "embedding_status": normalized_embedding_status,
+                }
+            )
         normalized_items.append(item)
 
     if should_persist:
@@ -171,12 +227,19 @@ async def ensure_default_food_cache() -> None:
 
 
 def food_requires_embedding(food: Food) -> bool:
-    return food.embedding is None and food.status == FoodStatusEnum.WAIT_FOR_PROCESS
+    return (
+        food.embedding is None
+        and food.embedding_status == FoodEmbeddingStatusEnum.PENDING
+    )
 
 
 def _prepare_food_for_embedding_refresh(food: Food) -> None:
     food.embedding = None
-    food.status = FoodStatusEnum.WAIT_FOR_PROCESS
+    food.embedding_status = (
+        FoodEmbeddingStatusEnum.PENDING
+        if embedding_is_configured()
+        else FoodEmbeddingStatusEnum.UNAVAILABLE
+    )
     food.version += 1
 
 
@@ -190,7 +253,7 @@ async def mark_food_embedding_failed(
         update(Food)
         .where(Food.id == food_id, Food.user_id == user_id, Food.version == version)
         .values(
-            status=FoodStatusEnum.FAILED,
+            embedding_status=FoodEmbeddingStatusEnum.FAILED,
             updated_at=utcnow(),
         )
     )
@@ -249,6 +312,44 @@ async def enqueue_food_embedding_jobs(
     )
 
 
+async def reconcile_embedding_jobs(
+    session: AsyncSession,
+    redis: Redis,
+) -> None:
+    if not embedding_is_configured():
+        logger.info("Skipped embedding reconcile because embedding is not configured.")
+        return
+
+    result = await session.execute(
+        select(Food).where(
+            Food.status == FoodStatusEnum.ACTIVE,
+            Food.is_recycled.is_(False),
+            Food.embedding.is_(None),
+            Food.embedding_status.in_(
+                [
+                    FoodEmbeddingStatusEnum.UNAVAILABLE,
+                    FoodEmbeddingStatusEnum.FAILED,
+                    FoodEmbeddingStatusEnum.PENDING,
+                ]
+            ),
+        )
+    )
+    foods = list(result.scalars().all())
+    if not foods:
+        logger.info("Embedding reconcile found no foods to enqueue.")
+        return
+
+    for food in foods:
+        food.embedding_status = FoodEmbeddingStatusEnum.PENDING
+        food.version += 1
+    await session.commit()
+    for food in foods:
+        await session.refresh(food)
+
+    logger.info("Embedding reconcile prepared %s foods for embedding.", len(foods))
+    await enqueue_food_embedding_jobs(session, redis, foods, trigger="reconcile")
+
+
 async def seed_default_foods_for_user(session: AsyncSession, user: User) -> list[Food]:
     default_items = await load_default_food_items()
     cached_items = [item for item in default_items if item.embedding is not None]
@@ -272,6 +373,10 @@ async def seed_default_foods_for_user(session: AsyncSession, user: User) -> list
                 "price_range": item.price_range,
                 "convenience": item.convenience,
                 "status": _resolve_food_status(item.embedding, item.status),
+                "embedding_status": _resolve_embedding_status(
+                    item.embedding,
+                    item.embedding_status,
+                ),
                 "version": 1,
                 "is_favorite": False,
                 "is_recycled": False,
@@ -303,6 +408,10 @@ async def seed_default_foods_for_user(session: AsyncSession, user: User) -> list
             price_range=item.price_range,
             convenience=item.convenience,
             status=_resolve_food_status(item.embedding, item.status),
+            embedding_status=_resolve_embedding_status(
+                item.embedding,
+                item.embedding_status,
+            ),
             embedding=item.embedding,
             user_id=user.id,
         )
@@ -359,6 +468,7 @@ async def list_foods(
     price_range: PriceRangeEnum | None = None,
     convenience: ConvenienceEnum | None = None,
     status: FoodStatusEnum | None = None,
+    embedding_status: FoodEmbeddingStatusEnum | None = None,
 ) -> list[Food]:
     statement = select(Food).where(Food.user_id == user_id)
 
@@ -387,6 +497,8 @@ async def list_foods(
         statement = statement.where(Food.convenience == convenience)
     if status is not None:
         statement = statement.where(Food.status == status)
+    if embedding_status is not None:
+        statement = statement.where(Food.embedding_status == embedding_status)
 
     statement = statement.order_by(Food.is_favorite.desc(), Food.updated_at.desc())
     result = await session.execute(statement)
@@ -412,7 +524,8 @@ async def create_food(
         **payload.model_dump(),
         user_id=user.id,
         embedding=None,
-        status=FoodStatusEnum.WAIT_FOR_PROCESS,
+        status=FoodStatusEnum.ACTIVE,
+        embedding_status=_initial_embedding_status(None),
         version=1,
     )
     session.add(food)
@@ -425,7 +538,13 @@ async def create_food(
         raise FoodAlreadyExistsException() from exc
 
     await session.refresh(food)
-    logger.info("Created food_id=%s user_id=%s status=%s.", food.id, user.id, food.status)
+    logger.info(
+        "Created food_id=%s user_id=%s status=%s embedding_status=%s.",
+        food.id,
+        user.id,
+        food.status,
+        food.embedding_status,
+    )
     await enqueue_food_embedding_jobs(session, redis, [food], trigger="create")
     await session.refresh(food)
     return food
@@ -494,23 +613,6 @@ async def set_food_active_state(
     is_active: bool,
 ) -> Food:
     food = await get_food_by_id(session, user.id, food_id)
-
-    if food.status in {FoodStatusEnum.WAIT_FOR_PROCESS, FoodStatusEnum.PROCESSING}:
-        logger.info(
-            "Skipped active state change for food_id=%s user_id=%s because status=%s.",
-            food_id,
-            user.id,
-            food.status,
-        )
-        return food
-
-    if food.status == FoodStatusEnum.FAILED and is_active:
-        logger.info(
-            "Skipped activating failed food_id=%s user_id=%s until embedding is regenerated.",
-            food_id,
-            user.id,
-        )
-        return food
 
     food.status = FoodStatusEnum.ACTIVE if is_active else FoodStatusEnum.INACTIVE
     await session.commit()

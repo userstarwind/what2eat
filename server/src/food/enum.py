@@ -30,8 +30,13 @@ class ConvenienceEnum(str, Enum):
 
 
 class FoodStatusEnum(str, Enum):
-    WAIT_FOR_PROCESS = "wait_for_process"
-    PROCESSING = "processing"
     ACTIVE = "active"
     INACTIVE = "inactive"
+
+
+class FoodEmbeddingStatusEnum(str, Enum):
+    UNAVAILABLE = "unavailable"
+    PENDING = "pending"
+    PROCESSING = "processing"
+    READY = "ready"
     FAILED = "failed"

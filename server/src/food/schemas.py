@@ -7,6 +7,7 @@ from .config import food_settings
 from .enum import (
     ConvenienceEnum,
     CuisineEnum,
+    FoodEmbeddingStatusEnum,
     FoodStatusEnum,
     MealTypeEnum,
     PriceRangeEnum,
@@ -81,6 +82,7 @@ class FoodRead(BaseModel):
     price_range: PriceRangeEnum
     convenience: ConvenienceEnum
     status: FoodStatusEnum
+    embedding_status: FoodEmbeddingStatusEnum
     version: int
     is_favorite: bool
     is_recycled: bool
@@ -92,6 +94,7 @@ class FoodRead(BaseModel):
 class DefaultFoodItem(FoodBase):
     embedding: list[float] | None = None
     status: FoodStatusEnum | None = None
+    embedding_status: FoodEmbeddingStatusEnum | None = None
 
     @field_validator("embedding")
     @classmethod

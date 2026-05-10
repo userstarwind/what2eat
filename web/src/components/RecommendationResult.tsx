@@ -1,4 +1,5 @@
 import * as React from 'react';
+import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import Card from '@mui/material/Card';
@@ -88,6 +89,42 @@ function buildRecommendationFormState(
       payload?.only_from_favorite ?? form?.only_from_favorite ?? false,
     extra_request: payload?.extra_request ?? form?.extra_request ?? '',
   };
+}
+
+function formatSource(value: string): string {
+  return value.replaceAll('_', ' ');
+}
+
+function getRecallRankLabel(mode: string, coarseRank: number): string {
+  if (mode === 'rule') {
+    return `Rule #${coarseRank}`;
+  }
+  if (mode === 'mixed') {
+    return `Recall #${coarseRank}`;
+  }
+  return `Coarse #${coarseRank}`;
+}
+
+function getScoreChips(
+  result: RecommendationResponse,
+  item: RecommendationResponse['recommendations'][number],
+): string[] {
+  const chips = [getRecallRankLabel(result.diagnostics.recall_source, item.coarse_rank)];
+  if (result.diagnostics.recall_source === 'rule') {
+    chips.push(`Match ${formatScore(item.rerank_score)}`);
+    return chips;
+  }
+  if (result.diagnostics.recall_source === 'mixed') {
+    chips.push(`Recall score ${formatScore(1 - item.coarse_distance)}`);
+  } else {
+    chips.push(`Distance ${formatDistance(item.coarse_distance)}`);
+  }
+  if (result.diagnostics.rerank_source === 'external') {
+    chips.push(`Rerank ${formatScore(item.rerank_score)}`);
+  } else if (result.diagnostics.rerank_source === 'mixed') {
+    chips.push(`Final score ${formatScore(item.rerank_score)}`);
+  }
+  return chips;
 }
 
 export default function RecommendationResult() {
@@ -211,6 +248,10 @@ export default function RecommendationResult() {
     summaryPayload?.only_from_favorite ??
     latestFormState?.only_from_favorite ??
     false;
+  const fallbackReasons = result?.diagnostics.fallback_reasons ?? [];
+  const hasFallbackNotice = Boolean(
+    result && result.diagnostics.recommendation_mode !== 'model',
+  );
 
   const renderPreferenceGroup = React.useCallback(
     (label: string, values: string[], prefix?: string) => (
@@ -419,6 +460,17 @@ export default function RecommendationResult() {
           </Grid>
         ) : result ? (
           <Grid container spacing={2}>
+            {hasFallbackNotice ? (
+              <Grid size={{ xs: 12 }}>
+                <Alert severity="info">
+                  Generated with {formatSource(result.diagnostics.recommendation_mode)} mode:
+                  recall used {formatSource(result.diagnostics.recall_source)}, ranking used{' '}
+                  {formatSource(result.diagnostics.rerank_source)}, and reasons used{' '}
+                  {formatSource(result.diagnostics.reason_source)}.
+                  {fallbackReasons.length ? ` ${fallbackReasons.join(' ')}` : ''}
+                </Alert>
+              </Grid>
+            ) : null}
             <Grid size={{ xs: 12, md: 4 }}>
               <Card variant="outlined">
                 <CardContent>
@@ -467,15 +519,9 @@ export default function RecommendationResult() {
                             </Typography>
                           </Box>
                           <Stack direction="row" spacing={1} flexWrap="wrap">
-                            <Chip size="small" label={`Coarse #${item.coarse_rank}`} />
-                            <Chip
-                              size="small"
-                              label={`Distance ${formatDistance(item.coarse_distance)}`}
-                            />
-                            <Chip
-                              size="small"
-                              label={`Rerank ${formatScore(item.rerank_score)}`}
-                            />
+                            {getScoreChips(result, item).map((label) => (
+                              <Chip key={label} size="small" label={label} />
+                            ))}
                           </Stack>
                         </Stack>
 

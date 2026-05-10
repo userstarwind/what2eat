@@ -13,7 +13,7 @@ from src.database import (
     init_redis,
     redis_client,
 )
-from src.food.enum import FoodStatusEnum
+from src.food.enum import FoodEmbeddingStatusEnum
 from src.food.models import Food, utcnow
 
 from .client import request_embeddings
@@ -93,9 +93,12 @@ async def _set_processing_if_fresh(job: dict[str, str | int]) -> Food | None:
             await _ack_job(stream_id)
             return None
 
-        if food.embedding is not None and food.status == FoodStatusEnum.ACTIVE:
+        if (
+            food.embedding is not None
+            and food.embedding_status == FoodEmbeddingStatusEnum.READY
+        ):
             logger.info(
-                "Skipping already-active food for job stream_id=%s food_id=%s.",
+                "Skipping already-embedded food for job stream_id=%s food_id=%s.",
                 stream_id,
                 food_id,
             )
@@ -106,7 +109,7 @@ async def _set_processing_if_fresh(job: dict[str, str | int]) -> Food | None:
             update(Food)
             .where(Food.id == food_id, Food.user_id == user_id, Food.version == version)
             .values(
-                status=FoodStatusEnum.PROCESSING,
+                embedding_status=FoodEmbeddingStatusEnum.PROCESSING,
                 updated_at=utcnow(),
             )
         )
@@ -117,7 +120,11 @@ async def _set_processing_if_fresh(job: dict[str, str | int]) -> Food | None:
 
         await session.commit()
         await session.refresh(food)
-        logger.info("Worker moved food_id=%s to PROCESSING version=%s.", food_id, version)
+        logger.info(
+            "Worker moved food_id=%s embedding_status to PROCESSING version=%s.",
+            food_id,
+            version,
+        )
         return food
 
 
@@ -133,7 +140,7 @@ async def _handle_success(job: dict[str, str | int], embedding: list[float]) -> 
             .where(Food.id == food_id, Food.user_id == user_id, Food.version == version)
             .values(
                 embedding=embedding,
-                status=FoodStatusEnum.ACTIVE,
+                embedding_status=FoodEmbeddingStatusEnum.READY,
                 updated_at=utcnow(),
             )
         )
@@ -167,7 +174,7 @@ async def _handle_failure(job: dict[str, str | int], reason: Exception) -> None:
                 update(Food)
                 .where(Food.id == food_id, Food.user_id == user_id, Food.version == version)
                 .values(
-                    status=FoodStatusEnum.FAILED,
+                    embedding_status=FoodEmbeddingStatusEnum.FAILED,
                     updated_at=utcnow(),
                 )
             )
@@ -176,7 +183,7 @@ async def _handle_failure(job: dict[str, str | int], reason: Exception) -> None:
                 update(Food)
                 .where(Food.id == food_id, Food.user_id == user_id, Food.version == version)
                 .values(
-                    status=FoodStatusEnum.WAIT_FOR_PROCESS,
+                    embedding_status=FoodEmbeddingStatusEnum.PENDING,
                     updated_at=utcnow(),
                 )
             )
