@@ -16,6 +16,8 @@ import { useNavigate, useParams } from 'react-router-dom';
 import PageContainer from './PageContainer';
 import {
   getRecommendationHistoryApi,
+  type RecommendationDiagnosticsSnapshot,
+  type RecommendationHistoryItem,
   type RecommendationHistoryRead,
 } from '../data/history_server';
 import {
@@ -29,6 +31,45 @@ import {
   priceRangeOptions,
   convenienceOptions,
 } from '../recommendation/shared';
+
+function formatSource(value: string): string {
+  return value.replaceAll('_', ' ');
+}
+
+function getRecallRankLabel(
+  diagnostics: RecommendationDiagnosticsSnapshot | null,
+  coarseRank: number,
+): string {
+  if (diagnostics?.recall_source === 'rule') {
+    return `Rule #${coarseRank}`;
+  }
+  if (diagnostics?.recall_source === 'mixed') {
+    return `Recall #${coarseRank}`;
+  }
+  return `Coarse #${coarseRank}`;
+}
+
+function getScoreChips(
+  diagnostics: RecommendationDiagnosticsSnapshot | null,
+  item: RecommendationHistoryItem,
+): string[] {
+  const chips = [getRecallRankLabel(diagnostics, item.coarse_rank)];
+  if (diagnostics?.recall_source === 'rule') {
+    chips.push(`Match ${formatScore(item.rerank_score)}`);
+    return chips;
+  }
+  if (diagnostics?.recall_source === 'mixed') {
+    chips.push(`Recall score ${formatScore(1 - item.coarse_distance)}`);
+  } else {
+    chips.push(`Distance ${formatDistance(item.coarse_distance)}`);
+  }
+  if (diagnostics?.rerank_source === 'external') {
+    chips.push(`Rerank ${formatScore(item.rerank_score)}`);
+  } else if (diagnostics?.rerank_source === 'mixed') {
+    chips.push(`Final score ${formatScore(item.rerank_score)}`);
+  }
+  return chips;
+}
 
 export default function RecommendationHistoryShow() {
   const navigate = useNavigate();
@@ -106,9 +147,26 @@ export default function RecommendationHistoryShow() {
   } else if (error) {
     content = <Alert severity="error">{error.message}</Alert>;
   } else if (history) {
+    const diagnostics = history.diagnostics_snapshot;
+    const fallbackReasons = diagnostics?.fallback_reasons ?? [];
+    const hasFallbackNotice = Boolean(
+      diagnostics && diagnostics.recommendation_mode !== 'model',
+    );
+
     content = (
       <Box sx={{ flexGrow: 1, width: '100%' }}>
         <Grid container spacing={2} sx={{ width: '100%' }}>
+          {hasFallbackNotice && diagnostics ? (
+            <Grid size={{ xs: 12 }}>
+              <Alert severity="info">
+                Generated with {formatSource(diagnostics.recommendation_mode)} mode:
+                recall used {formatSource(diagnostics.recall_source)}, ranking used{' '}
+                {formatSource(diagnostics.rerank_source)}, and reasons used{' '}
+                {formatSource(diagnostics.reason_source)}.
+                {fallbackReasons.length ? ` ${fallbackReasons.join(' ')}` : ''}
+              </Alert>
+            </Grid>
+          ) : null}
           <Grid size={{ xs: 12, sm: 6, md: 4 }}>
             <Card variant="outlined">
               <CardContent>
@@ -203,9 +261,9 @@ export default function RecommendationHistoryShow() {
                           </Typography>
                         </Box>
                         <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-                          <Chip size="small" label={`Coarse #${item.coarse_rank}`} />
-                          <Chip size="small" label={`Distance ${formatDistance(item.coarse_distance)}`} />
-                          <Chip size="small" label={`Rerank ${formatScore(item.rerank_score)}`} />
+                          {getScoreChips(history.diagnostics_snapshot, item).map((label) => (
+                            <Chip key={label} size="small" label={label} />
+                          ))}
                         </Stack>
                       </Stack>
 

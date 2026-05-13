@@ -1,6 +1,40 @@
 # what2eat
 
-`what2eat` is a full-stack food management app with:
+## Overview
+
+As the old saying goes: "I examine myself three times a day - What should I eat
+for breakfast? What should I eat for lunch? What should I eat for dinner?"
+
+Every day, choosing what to eat can become a small but exhausting decision.
+What2Eat is a food recommendation web system designed to reduce decision
+fatigue by turning meal selection into a simple, structured, and playful
+experience. Instead of endlessly thinking, scrolling through delivery apps, or
+asking friends for ideas, users can let What2Eat quickly suggest suitable food
+options based on their own preferences and saved food collection.
+
+What2Eat is built as a modern full-stack web application with an interactive
+React frontend, a FastAPI backend, PostgreSQL storage, Redis caching, and an
+AI-enhanced recommendation workflow. Users can manage their own food library,
+mark favorite items, recycle inactive foods, and request recommendations using
+filters such as cuisine, meal type, price range, convenience, favorite-only
+scope, and free-text extra requests.
+
+The recommendation workflow is designed to be useful beyond simple randomness.
+It can use embedding-based recall to find semantically relevant food candidates,
+external reranking to improve ordering, and optional chat models to generate
+short recommendation reasons. When model services are unavailable or partial
+results are returned, What2Eat falls back to rule-based recall, recall-score
+ranking, and template reasons, while recording diagnostics so users can see how
+each recommendation was produced.
+
+The system also keeps recommendation history. Each saved history record stores
+the original preference snapshot, candidate pool size, recommendation items,
+scores, reasons, and fallback diagnostics. This makes past decisions traceable
+and gives users a lightweight way to revisit meals they previously considered.
+
+## At A Glance
+
+`what2eat` includes:
 
 - `server`: FastAPI + PostgreSQL + Redis
 - `web`: React + Vite
