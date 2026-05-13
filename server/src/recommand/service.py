@@ -45,9 +45,9 @@ def _build_preference_text(preference: PreferenceFood) -> str:
         if value is not None
     }
     body = json.dumps(query_payload, ensure_ascii=False)
-    if global_settings.vllm_embedding_query_instruction:
+    if global_settings.embedding_query_instruction:
         return _build_instructed_query(
-            global_settings.vllm_embedding_query_instruction,
+            global_settings.embedding_query_instruction,
             body,
         )
     return body
@@ -67,8 +67,8 @@ def _build_rerank_query_text(preference: PreferenceFood) -> str:
         if value is not None
     }
     body = json.dumps(query_payload, ensure_ascii=False)
-    if global_settings.vllm_rerank_instruction:
-        return _build_instructed_query(global_settings.vllm_rerank_instruction, body)
+    if global_settings.rerank_instruction:
+        return _build_instructed_query(global_settings.rerank_instruction, body)
     return body
 
 
@@ -271,12 +271,12 @@ async def _request_rerank_scores(
     query_text: str,
     coarse_candidates: list[dict[str, object]],
 ) -> dict[str, float]:
-    if not global_settings.vllm_rerank_endpoint or not global_settings.vllm_rerank_model:
+    if not global_settings.rerank_endpoint or not global_settings.rerank_model:
         return {}
 
     payload = json.dumps(
         {
-            "model": global_settings.vllm_rerank_model,
+            "model": global_settings.rerank_model,
             "queries": query_text,
             "documents": [
                 _build_rerank_document(candidate["food"])  # type: ignore[arg-type]
@@ -285,9 +285,9 @@ async def _request_rerank_scores(
         }
     ).encode("utf-8")
     http_request = request.Request(
-        global_settings.vllm_rerank_endpoint,
+        global_settings.rerank_endpoint,
         data=payload,
-        headers={"Content-Type": "application/json"},
+        headers=global_settings.model_request_headers,
         method="POST",
     )
 
@@ -295,13 +295,13 @@ async def _request_rerank_scores(
         try:
             with request.urlopen(
                 http_request,
-                timeout=global_settings.vllm_rerank_timeout_seconds,
+                timeout=global_settings.rerank_timeout_seconds,
             ) as response:
                 body = response.read().decode("utf-8")
         except (TimeoutError, socket.timeout) as exc:
             logger.warning(
                 "External rerank request timed out after %s seconds.",
-                global_settings.vllm_rerank_timeout_seconds,
+                global_settings.rerank_timeout_seconds,
             )
             raise RuntimeError("Rerank request timed out.") from exc
         except error.URLError as exc:
@@ -450,7 +450,7 @@ async def _generate_llm_reasons(
     preference: PreferenceFood,
     selected_candidates: list[dict[str, object]],
 ) -> dict[str, str]:
-    if not global_settings.vllm_chat_endpoint or not global_settings.vllm_chat_model:
+    if not global_settings.chat_endpoint or not global_settings.chat_model:
         return {}
 
     def _run_sync(candidate: dict[str, object]) -> tuple[str, str]:
@@ -478,9 +478,9 @@ async def _generate_llm_reasons(
         }
         payload = json.dumps(
             {
-                "model": global_settings.vllm_chat_model,
+                "model": global_settings.chat_model,
                 "temperature": 0.2,
-                "max_tokens": global_settings.vllm_chat_max_tokens,
+                "max_tokens": global_settings.chat_max_tokens,
                 "messages": [
                     {
                         "role": "system",
@@ -499,21 +499,21 @@ async def _generate_llm_reasons(
             }
         ).encode("utf-8")
         http_request = request.Request(
-            global_settings.vllm_chat_endpoint,
+            global_settings.chat_endpoint,
             data=payload,
-            headers={"Content-Type": "application/json"},
+            headers=global_settings.model_request_headers,
             method="POST",
         )
         try:
             with request.urlopen(
                 http_request,
-                timeout=global_settings.vllm_chat_timeout_seconds,
+                timeout=global_settings.chat_timeout_seconds,
             ) as response:
                 body = response.read().decode("utf-8")
         except (TimeoutError, socket.timeout) as exc:
             logger.warning(
                 "External LLM reason generation timed out after %s seconds.",
-                global_settings.vllm_chat_timeout_seconds,
+                global_settings.chat_timeout_seconds,
             )
             raise RuntimeError("LLM reason generation timed out.") from exc
         except error.URLError as exc:
@@ -571,7 +571,7 @@ async def recommend_foods(
     recall_source = "embedding"
     coarse_candidates: list[dict[str, object]] = []
     embedding_recall_failed = False
-    if global_settings.vllm_embedding_endpoint and global_settings.vllm_embedding_model:
+    if global_settings.embedding_endpoint and global_settings.embedding_model:
         try:
             query_text = _build_preference_text(preference)
             query_embedding = (await request_embeddings([query_text]))[0]
@@ -617,8 +617,8 @@ async def recommend_foods(
 
     if not coarse_candidates:
         if (
-            global_settings.vllm_embedding_endpoint
-            and global_settings.vllm_embedding_model
+            global_settings.embedding_endpoint
+            and global_settings.embedding_model
             and not embedding_recall_failed
         ):
             fallback_reasons.append(
@@ -632,7 +632,7 @@ async def recommend_foods(
 
     external_rerank_scores: dict[str, float] = {}
     rerank_source = "coarse_score"
-    if global_settings.vllm_rerank_endpoint and global_settings.vllm_rerank_model:
+    if global_settings.rerank_endpoint and global_settings.rerank_model:
         try:
             external_rerank_scores = await _request_rerank_scores(
                 rerank_query_text,
@@ -681,7 +681,7 @@ async def recommend_foods(
 
     llm_reasons: dict[str, str] = {}
     reason_source = "template"
-    if global_settings.vllm_chat_endpoint and global_settings.vllm_chat_model:
+    if global_settings.chat_endpoint and global_settings.chat_model:
         try:
             llm_reasons = await _generate_llm_reasons(preference, final_candidates)
         except Exception as exc:
@@ -720,7 +720,7 @@ async def recommend_foods(
         fallback_reasons.append(
             "Some LLM reasons were missing or unusable; template reasons filled the gaps."
         )
-    elif global_settings.vllm_chat_endpoint and global_settings.vllm_chat_model:
+    elif global_settings.chat_endpoint and global_settings.chat_model:
         fallback_reasons.append(
             "LLM returned no usable reasons; used template reasons."
         )

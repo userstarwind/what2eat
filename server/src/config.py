@@ -39,19 +39,22 @@ class GlobalSettings(BaseSettings):
     food_embedding_stream_maxlen: int = 10000
     food_embedding_max_retries: int = 3
 
-    vllm_embedding_endpoint: str | None = None
-    vllm_embedding_model: str | None = None
-    vllm_embedding_query_instruction: str | None = None
-    vllm_embedding_encoding_format: str = "float"
-    vllm_embedding_timeout_seconds: int = 30
-    vllm_rerank_endpoint: str | None = None
-    vllm_rerank_model: str | None = None
-    vllm_rerank_instruction: str | None = None
-    vllm_rerank_timeout_seconds: int = 30
-    vllm_chat_endpoint: str | None = None
-    vllm_chat_model: str | None = None
-    vllm_chat_max_tokens: int = 512
-    vllm_chat_timeout_seconds: int = 30
+    embedding_endpoint: str | None = None
+    embedding_model: str | None = None
+    embedding_query_instruction: str | None = None
+    embedding_encoding_format: str = "float"
+    embedding_timeout_seconds: int = 30
+    rerank_endpoint: str | None = None
+    rerank_model: str | None = None
+    rerank_instruction: str | None = None
+    rerank_timeout_seconds: int = 30
+    chat_endpoint: str | None = None
+    chat_model: str | None = None
+    chat_max_tokens: int = 512
+    chat_timeout_seconds: int = 30
+    model_api_key: str | None = None
+    model_api_key_header: str = "Authorization"
+    model_api_key_scheme: str = "Bearer"
 
     recommendation_candidate_pool_minimum: int = 30
     recommendation_coarse_top_k: int = 10
@@ -60,6 +63,16 @@ class GlobalSettings(BaseSettings):
     repo_worker_processes: int = 1
     repo_clone_worker_processes: int | None = None
     repo_update_worker_processes: int | None = None
+
+    @property
+    def model_request_headers(self) -> dict[str, str]:
+        headers = {"Content-Type": "application/json"}
+        if self.model_api_key:
+            api_key = self.model_api_key.strip()
+            scheme = self.model_api_key_scheme.strip()
+            value = f"{scheme} {api_key}".strip() if scheme else api_key
+            headers[self.model_api_key_header] = value
+        return headers
 
     @property
     def database_url(self) -> str:

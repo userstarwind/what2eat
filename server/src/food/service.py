@@ -55,8 +55,8 @@ def _resolve_food_status(
 
 def embedding_is_configured() -> bool:
     return bool(
-        global_settings.vllm_embedding_endpoint
-        and global_settings.vllm_embedding_model
+        global_settings.embedding_endpoint
+        and global_settings.embedding_model
     )
 
 
