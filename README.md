@@ -116,6 +116,119 @@ Current backend API target in the frontend:
 VITE_API_BASE=http://localhost:8080
 ```
 
+## ERD
+
+```mermaid
+erDiagram
+  USERS ||--o{ FOODS : owns
+  USERS ||--o{ RECOMMENDATION_HISTORIES : requests
+  RECOMMENDATION_HISTORIES ||--o{ RECOMMENDATION_HISTORY_ITEMS : contains
+  FOODS ||--o{ RECOMMENDATION_HISTORY_ITEMS : referenced_by
+
+  USERS {
+    uuid id PK
+    string email UK
+    string full_name
+    string hashed_password
+  }
+
+  FOODS {
+    uuid id PK
+    uuid user_id FK
+    string name
+    string description
+    enum cuisine
+    enum meal_type
+    enum price_range
+    enum convenience
+    enum status
+    enum embedding_status
+    int version
+    boolean is_favorite
+    boolean is_recycled
+    vector embedding
+    datetime created_at
+    datetime updated_at
+  }
+
+  RECOMMENDATION_HISTORIES {
+    uuid id PK
+    uuid user_id FK
+    json preference_snapshot
+    json diagnostics_snapshot
+    int candidate_pool_size
+    int coarse_top_k
+    int final_top_k
+    datetime created_at
+  }
+
+  RECOMMENDATION_HISTORY_ITEMS {
+    uuid id PK
+    uuid history_id FK
+    uuid food_id
+    int rank
+    int coarse_rank
+    float coarse_distance
+    float rerank_score
+    string reason
+    json food_snapshot
+  }
+```
+
+## Recommendation Flow
+
+```mermaid
+flowchart TD
+  START([Start]) --> A[User submits food preferences]
+  A --> B[Count active candidate foods]
+  B --> C{Enough candidates?}
+  C -- No --> D[Return not enough candidates error]
+  D --> END([End])
+  C -- Yes --> E{Embedding configured?}
+
+  E -- Yes --> F[Build embedding query text]
+  F --> G[Request query embedding]
+  G --> H{Embedding request succeeded?}
+  H -- Yes --> I[Fetch vector candidates]
+  H -- No --> J[Fetch rule candidates]
+  E -- No --> J
+
+  I --> K{Vector candidates fill top K?}
+  K -- Yes --> M[Build rerank query text]
+  K -- No --> L[Fill missing candidates with rules]
+  L --> M
+  J --> M
+
+  M --> N{Rerank configured?}
+  N -- Yes --> O[Request external rerank scores]
+  O --> P{Rerank scores complete?}
+  P -- Yes --> Q[Rank by external scores]
+  P -- No --> R{Any rerank scores usable?}
+  R -- Yes --> S[Rank by mixed rerank and recall scores]
+  R -- No --> T[Rank by recall scores]
+  N -- No --> T
+
+  Q --> U[Select final top foods]
+  S --> U
+  T --> U
+  U --> V{Chat configured?}
+  V -- Yes --> W[Generate LLM reasons]
+  W --> X[Validate generated reasons]
+  X --> Y{All reasons usable?}
+  Y -- Yes --> Z[Use LLM reasons]
+  Y -- No --> AA{Any reasons usable?}
+  AA -- Yes --> AB[Use mixed LLM and template reasons]
+  AA -- No --> AC[Use template reasons]
+  V -- No --> AC
+
+  Z --> AD[Build response diagnostics]
+  AB --> AD
+  AC --> AD
+  AD --> AE[Persist recommendation history and items]
+  AE --> AF[Return recommendations]
+  AF --> END
+```
+
 ## Recommended Startup Order
 
 1. `docker compose up -d`
