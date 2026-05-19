@@ -287,7 +287,7 @@ async def _request_rerank_scores(
     http_request = request.Request(
         global_settings.rerank_endpoint,
         data=payload,
-        headers=global_settings.model_request_headers,
+        headers=global_settings.rerank_request_headers,
         method="POST",
     )
 
@@ -480,7 +480,7 @@ async def _generate_llm_reasons(
             {
                 "model": global_settings.chat_model,
                 "temperature": 0.2,
-                "max_tokens": global_settings.chat_max_tokens,
+                "max_completion_tokens": global_settings.chat_max_tokens,
                 "messages": [
                     {
                         "role": "system",
@@ -501,7 +501,7 @@ async def _generate_llm_reasons(
         http_request = request.Request(
             global_settings.chat_endpoint,
             data=payload,
-            headers=global_settings.model_request_headers,
+            headers=global_settings.chat_request_headers,
             method="POST",
         )
         try:
@@ -516,6 +516,14 @@ async def _generate_llm_reasons(
                 global_settings.chat_timeout_seconds,
             )
             raise RuntimeError("LLM reason generation timed out.") from exc
+        except error.HTTPError as exc:
+            error_body = exc.read().decode("utf-8", errors="replace")
+            logger.exception(
+                "External LLM reason generation failed with status=%s body=%s.",
+                exc.code,
+                error_body,
+            )
+            raise RuntimeError("Failed to generate recommendation reasons.") from exc
         except error.URLError as exc:
             logger.exception("External LLM reason generation failed.")
             raise RuntimeError("Failed to generate recommendation reasons.") from exc

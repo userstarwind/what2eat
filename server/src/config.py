@@ -53,6 +53,9 @@ class GlobalSettings(BaseSettings):
     chat_max_tokens: int = 512
     chat_timeout_seconds: int = 30
     model_api_key: str | None = None
+    embedding_api_key: str | None = None
+    rerank_api_key: str | None = None
+    chat_api_key: str | None = None
     model_api_key_header: str = "Authorization"
     model_api_key_scheme: str = "Bearer"
 
@@ -64,15 +67,34 @@ class GlobalSettings(BaseSettings):
     repo_clone_worker_processes: int | None = None
     repo_update_worker_processes: int | None = None
 
-    @property
-    def model_request_headers(self) -> dict[str, str]:
+    def _build_model_request_headers(
+        self,
+        service_api_key: str | None = None,
+    ) -> dict[str, str]:
         headers = {"Content-Type": "application/json"}
-        if self.model_api_key:
-            api_key = self.model_api_key.strip()
+        api_key = self.model_api_key if service_api_key is None else service_api_key
+        if api_key:
+            api_key = api_key.strip()
             scheme = self.model_api_key_scheme.strip()
             value = f"{scheme} {api_key}".strip() if scheme else api_key
             headers[self.model_api_key_header] = value
         return headers
+
+    @property
+    def model_request_headers(self) -> dict[str, str]:
+        return self._build_model_request_headers()
+
+    @property
+    def embedding_request_headers(self) -> dict[str, str]:
+        return self._build_model_request_headers(self.embedding_api_key)
+
+    @property
+    def rerank_request_headers(self) -> dict[str, str]:
+        return self._build_model_request_headers(self.rerank_api_key)
+
+    @property
+    def chat_request_headers(self) -> dict[str, str]:
+        return self._build_model_request_headers(self.chat_api_key)
 
     @property
     def database_url(self) -> str:

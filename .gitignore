@@ -1,1 +1,3 @@
 .vscode/settings.json
+server/.env
+web/.env

@@ -32,7 +32,7 @@ def _request_embeddings_sync(inputs: list[str]) -> list[list[float]]:
     http_request = request.Request(
         global_settings.embedding_endpoint,
         data=payload,
-        headers=global_settings.model_request_headers,
+        headers=global_settings.embedding_request_headers,
         method="POST",
     )
 

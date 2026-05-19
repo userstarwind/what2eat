@@ -89,14 +89,27 @@ EMBEDDING_MODEL=Qwen3-Embedding-0.6B
 SGLang, LM Studio, and cloud providers can be used by pointing the endpoint variables at their OpenAI-compatible routes, for example:
 
 ```text
-CHAT_ENDPOINT=http://127.0.0.1:1234/v1/chat/completions
-CHAT_MODEL=local-chat-model
+EMBEDDING_ENDPOINT=http://127.0.0.1:1234/v1/embeddings
+EMBEDDING_MODEL=text-embedding-qwen3-embedding-0.6b
+EMBEDDING_API_KEY=
+CHAT_ENDPOINT=https://api.openai.com/v1/chat/completions
+CHAT_MODEL=gpt-4.1-mini
+CHAT_API_KEY=your-openai-api-key
 RERANK_ENDPOINT=http://127.0.0.1:8002/rerank
 RERANK_MODEL=local-reranker
-MODEL_API_KEY=your-cloud-api-key
 ```
 
-When `MODEL_API_KEY` is set, requests include `Authorization: Bearer <key>`. Use `MODEL_API_KEY_HEADER` and `MODEL_API_KEY_SCHEME` if a provider expects a different header format.
+When `EMBEDDING_API_KEY`, `RERANK_API_KEY`, or `CHAT_API_KEY` is set, requests for that service include `Authorization: Bearer <key>`. `MODEL_API_KEY` remains available as a shared fallback.
+
+Use `MODEL_API_KEY_HEADER` and `MODEL_API_KEY_SCHEME` if a provider expects a different header format.
+
+For LM Studio, start the local server and verify the exact loaded model id with:
+
+```bash
+curl http://127.0.0.1:1234/v1/models
+```
+
+If the returned id differs from `text-embedding-qwen3-embedding-0.6b`, put the returned id in `EMBEDDING_MODEL`.
 
 ## 3. Start Backend
 
