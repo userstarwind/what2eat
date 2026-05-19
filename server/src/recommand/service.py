@@ -32,6 +32,8 @@ def _build_instructed_query(task_description: str, query: str) -> str:
 
 
 def _build_preference_text(preference: PreferenceFood) -> str:
+    # Keep the embedding query compact and structured so it stays close to the
+    # food documents generated from the same fields.
     query_payload = {
         "cuisine": [item.value for item in preference.cuisine] or None,
         "meal_type": [item.value for item in preference.meal_type] or None,
@@ -92,6 +94,8 @@ def _candidate_filters(
     *,
     require_embedding: bool = False,
 ) -> list[object]:
+    # All recall paths share the same visibility rules; embedding recall adds
+    # readiness checks on top of this base candidate pool.
     filters: list[object] = [
         Food.user_id == user_id,
         Food.status == FoodStatusEnum.ACTIVE,
@@ -171,6 +175,8 @@ def _tokenize_extra_request(extra_request: str | None) -> set[str]:
 
 
 def _rule_match_score(preference: PreferenceFood, food: Food) -> float:
+    # This deterministic score is the fallback recall signal when embeddings or
+    # reranking are unavailable, and it also fills gaps in partial model results.
     score = 0.0
     if preference.cuisine and food.cuisine in preference.cuisine:
         score += 3.0
@@ -309,6 +315,8 @@ async def _request_rerank_scores(
             raise RuntimeError("Failed to request rerank results.") from exc
 
         response_payload = json.loads(body)
+        # Support both common response shapes so the service can work with
+        # OpenAI-style rerank APIs and local/third-party rerank servers.
         items = response_payload.get("data") or response_payload.get("results") or []
         scores: dict[str, float] = {}
         for item in items:
@@ -356,6 +364,8 @@ def _clean_description(description: str | None) -> str | None:
 
 
 def _fallback_reason(preference: PreferenceFood, food: Food) -> str:
+    # Template reasons keep the product usable when the chat model is disabled,
+    # times out, or returns text that is too short to be useful.
     matched_phrases: list[str] = []
     if preference.cuisine and food.cuisine in preference.cuisine:
         matched_phrases.append(f"a {_humanize_enum(food.cuisine.value)} craving")
@@ -604,6 +614,8 @@ async def recommend_foods(
         coarse_candidates
         and len(coarse_candidates) < global_settings.recommendation_coarse_top_k
     ):
+        # Embedding recall may skip foods whose vectors are not ready yet; fill
+        # the remaining slots with rule candidates instead of returning a short batch.
         fill_count = global_settings.recommendation_coarse_top_k - len(coarse_candidates)
         rule_candidates = await _fetch_rule_candidates(
             session,
@@ -674,6 +686,8 @@ async def recommend_foods(
         food = candidate["food"]  # type: ignore[index]
         coarse_distance = float(candidate["coarse_distance"])  # type: ignore[arg-type]
         recall_score = float(candidate.get("rule_score", 1.0 - coarse_distance))
+        # Missing external rerank scores fall back to recall score so partial
+        # rerank responses still produce a complete ordered list.
         rerank_score = external_rerank_scores.get(str(food.id), recall_score)
         scored_candidates.append(
             {

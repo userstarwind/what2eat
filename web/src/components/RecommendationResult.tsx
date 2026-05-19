@@ -50,6 +50,8 @@ function appendExtraRequest(
   existingExtraRequest: string | null | undefined,
   nextExtraRequest: string,
 ): string | null {
+  // Preserve the previous request and append the user's next-batch hint without
+  // duplicating identical text.
   const normalizedExisting = existingExtraRequest?.trim() ?? '';
   const normalizedNext = nextExtraRequest.trim();
 
@@ -81,6 +83,8 @@ function buildRecommendationFormState(
   }
 
   return {
+    // Prefer the actual submitted payload because it includes any "swap batch"
+    // edits made on this page; fall back to the original form state for Back.
     cuisine: [...(payload?.cuisine ?? form?.cuisine ?? [])],
     meal_type: [...(payload?.meal_type ?? form?.meal_type ?? [])],
     price_range: [...(payload?.price_range ?? form?.price_range ?? [])],
@@ -162,6 +166,8 @@ export default function RecommendationResult() {
     const currentPayload = requestPayload;
 
     const runRecommendation = async () => {
+      // Keep the payload local to this effect run so late responses cannot
+      // overwrite a newer request after the user asks for another batch.
       setIsLoading(true);
       setLoadingStepIndex(0);
 
@@ -211,6 +217,8 @@ export default function RecommendationResult() {
       return undefined;
     }
 
+    // The backend does the real work in one request; this timer only advances
+    // the visible progress copy while the user waits.
     const timer = window.setInterval(() => {
       setLoadingStepIndex((current) =>
         current < loadingSteps.length - 1 ? current + 1 : current,
@@ -285,6 +293,8 @@ export default function RecommendationResult() {
       return;
     }
 
+    // Exclude everything shown in the current batch so the next request explores
+    // fresh candidates while keeping the same preference filters.
     const nextExcludedFoodIds = Array.from(
       new Set([
         ...(displayPayload.exclude_food_ids ?? []),

@@ -44,6 +44,8 @@ async def _ack_job(stream_id: str) -> None:
 
 
 async def _read_jobs(consumer_name: str, pending_only: bool) -> list[dict[str, str | int]]:
+    # First drain this consumer group's pending entries, then block for new work.
+    # This lets a restarted worker recover jobs it read but did not finish.
     stream_position = "0" if pending_only else ">"
     response = await redis_client.xreadgroup(
         groupname=global_settings.food_embedding_consumer_group,
@@ -82,6 +84,8 @@ async def _set_processing_if_fresh(job: dict[str, str | int]) -> Food | None:
             select(Food).where(Food.id == food_id, Food.user_id == user_id)
         )
         food = result.scalar_one_or_none()
+        # Version checks prevent a slow or retried job from embedding stale food
+        # text after the user has edited the item.
         if food is None or food.version != version:
             logger.info(
                 "Discarding stale or missing job stream_id=%s food_id=%s user_id=%s version=%s.",
@@ -169,6 +173,8 @@ async def _handle_failure(job: dict[str, str | int], reason: Exception) -> None:
     )
 
     async with SessionLocal() as session:
+        # Put retryable jobs back into PENDING before re-enqueueing; otherwise
+        # the UI would show PROCESSING until the next attempt finishes.
         if attempt + 1 >= global_settings.food_embedding_max_retries:
             await session.execute(
                 update(Food)
@@ -213,6 +219,8 @@ async def process_embedding_jobs_once(consumer_name: str) -> None:
     input_texts: list[str] = []
 
     for job in jobs:
+        # Claim each job in the database before sending a batched embedding
+        # request, so duplicate workers do not process the same fresh version.
         food = await _set_processing_if_fresh(job)
         if food is None:
             continue

@@ -129,6 +129,8 @@ async def load_default_food_items() -> list[DefaultFoodItem]:
 
 async def ensure_default_food_cache() -> None:
     default_items = await load_default_food_items()
+    # The checked-in default food file can cache embeddings to avoid regenerating
+    # the same vectors for every new user and every app startup.
     items_to_generate = default_items if not food_settings.use_cache else [
         item for item in default_items if item.embedding is None
     ]
@@ -192,6 +194,8 @@ async def ensure_default_food_cache() -> None:
 
     normalized_items: list[DefaultFoodItem] = []
     for item in default_items:
+        # Keep persisted status fields consistent with whether an embedding is
+        # present and whether embedding generation is configured.
         normalized_status = _resolve_food_status(item.embedding, item.status)
         normalized_embedding_status = _resolve_embedding_status(
             item.embedding,
@@ -234,6 +238,8 @@ def food_requires_embedding(food: Food) -> bool:
 
 
 def _prepare_food_for_embedding_refresh(food: Food) -> None:
+    # Bump the version so any older queued embedding jobs become stale and cannot
+    # overwrite the vector for the newly edited food text.
     food.embedding = None
     food.embedding_status = (
         FoodEmbeddingStatusEnum.PENDING
@@ -273,6 +279,8 @@ async def enqueue_food_embedding_jobs(
         return
 
     try:
+        # Queue jobs after the food rows are committed so workers can safely load
+        # the version they are asked to embed.
         await enqueue_food_embedding_jobs_batch(
             redis,
             [
@@ -363,6 +371,8 @@ async def seed_default_foods_for_user(session: AsyncSession, user: User) -> list
     )
 
     if cached_items:
+        # Cached rows can be inserted in bulk because they already have vectors
+        # and do not need ORM instances for later enqueueing.
         cached_rows = [
             {
                 "id": uuid4(),
@@ -400,6 +410,8 @@ async def seed_default_foods_for_user(session: AsyncSession, user: User) -> list
         )
 
     foods_to_enqueue = [
+        # Uncached defaults are kept as ORM instances so callers can enqueue
+        # embedding jobs for exactly these rows after the registration commit.
         Food(
             name=item.name,
             description=item.description,
@@ -560,6 +572,8 @@ async def update_food(
     food = await get_food_by_id(session, user.id, food_id)
     update_data = payload.model_dump(exclude_unset=True)
     embedding_source_changed = bool(_EMBEDDING_SOURCE_FIELDS.intersection(update_data))
+    # Only edits that affect the semantic search document should invalidate and
+    # regenerate the embedding; flags like favorite/recycled do not need a vector refresh.
     logger.info(
         "Updating food_id=%s user_id=%s changed_fields=%s embedding_source_changed=%s.",
         food_id,
