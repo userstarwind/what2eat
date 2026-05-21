@@ -32,6 +32,20 @@ the original preference snapshot, candidate pool size, recommendation items,
 scores, reasons, and fallback diagnostics. This makes past decisions traceable
 and gives users a lightweight way to revisit meals they previously considered.
 
+## AI Statement
+
+I have used AI tools in completing this work.
+
+The automated writing and generative AI tools used include ChatGPT/Codex for
+planning, drafting, editing, and reviewing parts of the project documentation
+and code implementation. These tools were used to help generate ideas, suggest
+code structure, assist with debugging, identify possible implementation issues,
+improve wording, and refine explanations of the system design and
+recommendation workflow.
+
+All AI-assisted outputs were reviewed and adapted before inclusion. The final
+content, implementation decisions, and submitted work remain my responsibility.
+
 ## At A Glance
 
 `what2eat` includes:
