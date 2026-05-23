@@ -1,5 +1,7 @@
 # what2eat
 
+[GitHub Repository](https://github.com/userstarwind/what2eat)
+
 ## Overview
 
 As the old saying goes: "I examine myself three times a day - What should I eat
