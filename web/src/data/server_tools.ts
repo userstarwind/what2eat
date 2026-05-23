@@ -1,5 +1,5 @@
 export const API_BASE =
-  import.meta.env.VITE_API_BASE?.trim() || 'http://localhost:8000';
+  import.meta.env.VITE_API_BASE?.trim() || 'http://localhost:8080';
 const REQUEST_TIMEOUT_MS = 15000;
 
 export class ApiError extends Error {
